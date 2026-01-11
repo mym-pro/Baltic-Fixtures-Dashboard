@@ -787,7 +787,7 @@ time.sleep(1)  # 初始延迟
 tc_spot = load_tc_data(days_back)
 if 'tc_spot' not in st.session_state:
     st.session_state['tc_spot'] = tc_spot
-
+"""
 time.sleep(1)  # 请求之间添加延迟
 period_spot = load_period_data(days_back)
 if 'period_spot' not in st.session_state:
@@ -812,11 +812,12 @@ time.sleep(1)
 vcor_spot = load_voyage_ore_data(days_back)
 if 'vcor_spot' not in st.session_state:
     st.session_state['vcor_spot'] = vcor_spot
-
+"""
 st.text('Fixture Data Done')
 st.write('All Data Loaded!!')
 
 st.button('Update Data',on_click=update_data) #按钮链接更新函数
 st.text('Data will be updated when streamlit is opened')
 st.text('If you would like to trigger the reload right now, please click on the above "Update Data" button.')
+
 
