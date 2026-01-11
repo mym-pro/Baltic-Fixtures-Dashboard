@@ -7,6 +7,7 @@ st.title('Baltic Fixture Dashboard')
 # 依赖项
 import warnings; warnings.simplefilter('ignore') #把 Python 的所有警告（如链式赋值、过期 API）静默掉，让控制台干净，调试阶段可注释掉以便发现潜在问题。
 import pandas as pd
+import time
 import re
 import numpy as np
 from datetime import date
@@ -782,29 +783,35 @@ pop(key, None) 会把 key 对应的值取出来同时删掉；如果 key 不存�
 
 """
  
-tc_spot=load_tc_data(days_back)
+time.sleep(1)  # 初始延迟
+tc_spot = load_tc_data(days_back)
 if 'tc_spot' not in st.session_state:
-    st.session_state['tc_spot']=tc_spot
+    st.session_state['tc_spot'] = tc_spot
 
-period_spot=load_period_data(days_back)
+time.sleep(1)  # 请求之间添加延迟
+period_spot = load_period_data(days_back)
 if 'period_spot' not in st.session_state:
-    st.session_state['period_spot']=period_spot
+    st.session_state['period_spot'] = period_spot
 
-vcgr_spot=load_voyage_grain_data(days_back)
+time.sleep(1)
+vcgr_spot = load_voyage_grain_data(days_back)
 if 'vcgr_spot' not in st.session_state:
-    st.session_state['vcgr_spot']=vcgr_spot
+    st.session_state['vcgr_spot'] = vcgr_spot
 
-vcco_spot=load_voyage_coal_data(days_back)
+time.sleep(1)
+vcco_spot = load_voyage_coal_data(days_back)
 if 'vcco_spot' not in st.session_state:
-    st.session_state['vcco_spot']=vcco_spot
+    st.session_state['vcco_spot'] = vcco_spot
 
-vcmi_spot=load_voyage_misc_data(days_back)
+time.sleep(1)
+vcmi_spot = load_voyage_misc_data(days_back)
 if 'vcmi_spot' not in st.session_state:
-    st.session_state['vcmi_spot']=vcmi_spot
+    st.session_state['vcmi_spot'] = vcmi_spot
 
-vcor_spot=load_voyage_ore_data(days_back)
+time.sleep(1)
+vcor_spot = load_voyage_ore_data(days_back)
 if 'vcor_spot' not in st.session_state:
-    st.session_state['vcor_spot']=vcor_spot
+    st.session_state['vcor_spot'] = vcor_spot
 
 st.text('Fixture Data Done')
 st.write('All Data Loaded!!')
