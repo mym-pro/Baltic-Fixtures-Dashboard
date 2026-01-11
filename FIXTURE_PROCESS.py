@@ -145,7 +145,7 @@ TC_RE_MAPS = {
     'hire': re.compile(r'(\$.*?)(?:\s*-|$)', re.I),#从第一个美元符号开始，一直吞到第一个 - 或行尾之前结束，内容不限
 }
 @st.cache_data()
-def load_tc_data(days_back: int = 2):
+def load_tc_data(days_back: int = 1):
     headers = {'x-apikey': 'FMNNXJKJMSV6PE4YA36EOAAJXX1WAH84KSWNU8PEUFGRHUPJZA3QTG1FLE09SXJF'}
     dateto=pd.to_datetime('today') #获取代码运行当日日期
     datefrom=dateto-BDay(days_back) #向前推15个工作日，不考虑节假日，得到15日的数据。意思是允许断更15天。因为可能有15天不打开链接，那么他就没法更新，如果比如说一个月没打开，那么就需要改成31。但是fixture的数据不需要每天连续更新，所以往前推两天就够了
@@ -269,7 +269,7 @@ PERIOD_RE_MAPS={
     'hire': re.compile(r'(\$.*?)(?:\s*-|$)', re.I),#从第一个美元符号开始，一直吞到第一个 - 或行尾之前结束，内容不限
 }
 @st.cache_data()
-def load_period_data(days_back: int = 2):
+def load_period_data(days_back: int = 1):
     headers = {'x-apikey': 'FMNNXJKJMSV6PE4YA36EOAAJXX1WAH84KSWNU8PEUFGRHUPJZA3QTG1FLE09SXJF'}
     dateto=pd.to_datetime('today') #获取代码运行当日日期
     datefrom=dateto-BDay(days_back) #向前推15个工作日，不考虑节假日，得到15日的数据。意思是允许断更15天。因为可能有15天不打开链接，那么他就没法更新，如果比如说一个月没打开，那么就需要改成31。但是fixture的数据不需要每天连续更新，所以往前推两天就够了
@@ -374,7 +374,7 @@ VC_RE_MAPS={
     'freight': re.compile(r'(\$.*?)(?:\s*)', re.I),#第一个美元符号开始、直到遇到空格前”的运费金额
 }
 @st.cache_data()
-def load_voyage_grain_data(days_back: int = 2):
+def load_voyage_grain_data(days_back: int = 1):
     headers = {'x-apikey': 'FMNNXJKJMSV6PE4YA36EOAAJXX1WAH84KSWNU8PEUFGRHUPJZA3QTG1FLE09SXJF'}
     dateto=pd.to_datetime('today') #获取代码运行当日日期
     datefrom=dateto-BDay(days_back) #向前推15个工作日，不考虑节假日，得到15日的数据。意思是允许断更15天。因为可能有15天不打开链接，那么他就没法更新，如果比如说一个月没打开，那么就需要改成31。但是fixture的数据不需要每天连续更新，所以往前推两天就够了
@@ -471,7 +471,7 @@ def load_voyage_grain_data(days_back: int = 2):
 
 
 @st.cache_data()
-def load_voyage_coal_data(days_back: int = 2):
+def load_voyage_coal_data(days_back: int = 1):
     headers = {'x-apikey': 'FMNNXJKJMSV6PE4YA36EOAAJXX1WAH84KSWNU8PEUFGRHUPJZA3QTG1FLE09SXJF'}
     dateto=pd.to_datetime('today') #获取代码运行当日日期
     datefrom=dateto-BDay(days_back) #向前推15个工作日，不考虑节假日，得到15日的数据。意思是允许断更15天。因为可能有15天不打开链接，那么他就没法更新，如果比如说一个月没打开，那么就需要改成31。但是fixture的数据不需要每天连续更新，所以往前推两天就够了
@@ -568,7 +568,7 @@ def load_voyage_coal_data(days_back: int = 2):
 
 
 @st.cache_data()
-def load_voyage_misc_data(days_back: int = 2):
+def load_voyage_misc_data(days_back: int = 1):
     headers = {'x-apikey': 'FMNNXJKJMSV6PE4YA36EOAAJXX1WAH84KSWNU8PEUFGRHUPJZA3QTG1FLE09SXJF'}
     dateto=pd.to_datetime('today') #获取代码运行当日日期
     datefrom=dateto-BDay(days_back) #向前推15个工作日，不考虑节假日，得到15日的数据。意思是允许断更15天。因为可能有15天不打开链接，那么他就没法更新，如果比如说一个月没打开，那么就需要改成31。但是fixture的数据不需要每天连续更新，所以往前推两天就够了
@@ -664,7 +664,7 @@ def load_voyage_misc_data(days_back: int = 2):
     
 
 @st.cache_data()
-def load_voyage_ore_data(days_back: int = 2):
+def load_voyage_ore_data(days_back: int = 1):
     headers = {'x-apikey': 'FMNNXJKJMSV6PE4YA36EOAAJXX1WAH84KSWNU8PEUFGRHUPJZA3QTG1FLE09SXJF'}
     dateto=pd.to_datetime('today') #获取代码运行当日日期
     datefrom=dateto-BDay(days_back) #向前推15个工作日，不考虑节假日，得到15日的数据。意思是允许断更15天。因为可能有15天不打开链接，那么他就没法更新，如果比如说一个月没打开，那么就需要改成31。但是fixture的数据不需要每天连续更新，所以往前推两天就够了
@@ -819,5 +819,6 @@ st.write('All Data Loaded!!')
 st.button('Update Data',on_click=update_data) #按钮链接更新函数
 st.text('Data will be updated when streamlit is opened')
 st.text('If you would like to trigger the reload right now, please click on the above "Update Data" button.')
+
 
 
