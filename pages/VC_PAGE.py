@@ -1,0 +1,620 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import plotly.express as px
+import plotly.graph_objects as go
+import os
+
+st.set_page_config(layout="wide", page_title="VOYAGE Historical Data")
+st.title('🚢 VOYAGE Historical Data')
+st.markdown("""
+### VOYAGE历史数据查询
+基于本地保存的历史数据进行查询和分析
+""")
+
+# ==================== Australia港口识别函数 ====================
+def is_australian_port(port_name):
+    """检查港口是否为Australia相关港口"""
+    if pd.isna(port_name):
+        return False
+    
+    australian_keywords = [
+        # 国家/地区名称
+        'AUSTRALIA', 'AUS', 
+        'WESTERN AUSTRALIA', 'WA',
+        'QUEENSLAND', 'QLD',
+        'NEW SOUTH WALES', 'NSW',
+        'VICTORIA', 'VIC',
+        'SOUTH AUSTRALIA', 'SA',
+        'TASMANIA', 'TAS',
+        'NORTHERN TERRITORY', 'NT',
+        
+        # 主要城市港口
+        'SYDNEY', 'MELBOURNE', 'BRISBANE', 'PERTH',
+        'ADELAIDE', 'DARWIN', 'HOBART', 
+        
+        # 重要港口城市
+        'NEWCASTLE', 'FREMANTLE', 'GEELONG', 'PORT KEMBLA',
+        'TOWNSVILLE', 'CAIRNS', 'GLADSTONE', 'MACKAY', 
+        'BUNBURY', 'ESPERANCE', 'ALBANY', 'PORT LINCOLN',
+        
+        # 矿石/煤炭港口
+        'PORT HEDLAND', 'DAMPIER', 'HAY POINT', 'ABBOT POINT',
+        'PORT WALCOTT', 'CAPE LAMBERT', 'PORT ALMA',
+        'PORT BOTANY', 'PORT OF BRISBANE', 'PORT OF MELBOURNE',
+        'PORT OF ADELAIDE', 'PORT OF FREMANTLE',
+        
+        # 其他常见港口
+        'WEIPA', 'GOVE', 'KARRATHA', 'GERALDTON',
+        'BROOME', 'PORTLAND', 'BURNIE', 'DEVONPORT',
+        'PORT PIRIE', 'WHYALLA', 'PORT GILES'
+    ]
+    
+    port_str = str(port_name).upper()
+    
+    for keyword in australian_keywords:
+        if keyword in port_str:
+            return True
+    
+    return False
+
+def contains_australian_info(row):
+    """检查一行数据是否包含Australia相关信息"""
+    # VC类型检查loadArea, loadPort, dischargePort
+    fields_to_check = ['loadArea', 'loadPort', 'dischargePort']
+    for field in fields_to_check:
+        if field in row and is_australian_port(row[field]):
+            return True
+    return False
+
+# ==================== 数据加载函数 ====================
+@st.cache_data(ttl=300)  # 缓存5分钟
+def load_vc_data_from_session(vc_type):
+    """从session_state加载指定类型的VC数据"""
+    # 根据VC类型确定session_state中的键名
+    session_keys = {
+        'VOYAGE GRAIN': 'vcgr_spot',
+        'VOYAGE COAL': 'vcco_spot',
+        'VOYAGE MISC': 'vcmi_spot',
+        'VOYAGE ORE': 'vcor_spot'
+    }
+    
+    if vc_type not in session_keys:
+        return None
+    
+    session_key = session_keys[vc_type]
+    
+    if session_key not in st.session_state:
+        return None
+    
+    data = st.session_state[session_key]
+    
+    if data is None:
+        return None
+    
+    # 确保数据是DataFrame并且有正确的列
+    if isinstance(data, pd.DataFrame) and not data.empty:
+        # 确保数据按日期倒序排列（最新在前）
+        data = data.sort_index(ascending=False)
+        
+        # 确保有VESSEL TYPE列
+        if 'VESSEL TYPE' not in data.columns:
+            # 如果数据中没有VESSEL TYPE列，我们可以尝试添加
+            import re
+            
+            def add_vessel_type_simple(df):
+                if df is None or df.empty:
+                    return df
+                
+                df = df.copy()
+                
+                if 'dwt' not in df.columns:
+                    df['VESSEL TYPE'] = None
+                    return df
+                
+                def parse_dwt(x):
+                    if pd.isna(x):
+                        return None
+                    try:
+                        x_str = str(x).replace(',', '').strip()
+                        match = re.search(r'(\d+)', x_str)
+                        if match:
+                            return int(match.group(1))
+                        return None
+                    except:
+                        return None
+                
+                df['dwt_numeric'] = df['dwt'].apply(parse_dwt)
+                
+                def determine_vessel_type(dwt_val):
+                    if pd.isna(dwt_val):
+                        return None
+                    
+                    try:
+                        dwt_num = float(dwt_val)
+                        if dwt_num > 100000:
+                            return 'CAPE/VLOC'
+                        elif dwt_num > 80000 and dwt_num < 100000:
+                            return 'KMX'
+                        elif dwt_num >= 65000 and dwt_num <= 80000:
+                            return 'PMX'
+                        elif dwt_num < 65000:
+                            return 'SMX/UMX/HANDY'
+                        else:
+                            return None
+                    except:
+                        return None
+                
+                df['VESSEL TYPE'] = df['dwt_numeric'].apply(determine_vessel_type)
+                
+                if 'dwt_numeric' in df.columns:
+                    df = df.drop(columns=['dwt_numeric'])
+                
+                return df
+            
+            data = add_vessel_type_simple(data)
+        
+        return data
+    
+    return None
+
+def get_vc_file_path(vc_type):
+    """根据VC类型获取文件路径"""
+    file_map = {
+        'VOYAGE GRAIN': 'vcgrain.csv',
+        'VOYAGE COAL': 'vccoal.csv',
+        'VOYAGE MISC': 'vcmisc.csv',
+        'VOYAGE ORE': 'vcore.csv'
+    }
+    return file_map.get(vc_type)
+
+# ==================== 页面主逻辑 ====================
+st.sidebar.title("📊 数据配置")
+
+# 选择VC类型
+vc_type = st.sidebar.selectbox(
+    "选择VOYAGE类型",
+    ["VOYAGE GRAIN", "VOYAGE COAL", "VOYAGE MISC", "VOYAGE ORE"],
+    index=0
+)
+
+# 时间范围筛选
+st.sidebar.markdown("---")
+st.sidebar.title("📅 时间范围筛选")
+
+# 尝试从session_state加载数据
+vc_data = load_vc_data_from_session(vc_type)
+
+# 如果session_state中没有数据，尝试从文件加载
+if vc_data is None or vc_data.empty:
+    file_path = get_vc_file_path(vc_type)
+    
+    if file_path and os.path.exists(file_path):
+        try:
+            vc_data = pd.read_csv(file_path, parse_dates=['date'])
+            vc_data.set_index('date', inplace=True)
+            vc_data = vc_data.sort_index(ascending=False)
+            
+            # 更新session_state
+            session_keys = {
+                'VOYAGE GRAIN': 'vcgr_spot',
+                'VOYAGE COAL': 'vcco_spot',
+                'VOYAGE MISC': 'vcmi_spot',
+                'VOYAGE ORE': 'vcor_spot'
+            }
+            st.session_state[session_keys[vc_type]] = vc_data
+            
+            st.sidebar.success(f"✅ 已从文件加载 {len(vc_data)} 条{vc_type}记录")
+        except Exception as e:
+            st.error(f"从文件加载数据时出错: {e}")
+            st.stop()
+    else:
+        st.error(f"⚠️ {vc_type}数据未加载且未找到数据文件")
+        st.markdown(f"""
+        **请先返回数据处理页面加载数据：**
+        1. 前往 **数据处理页面**
+        2. 点击 **Update Data** 按钮
+        3. 等待数据加载完成
+        4. 返回此页面查看历史数据
+        """)
+        st.stop()
+
+# 显示数据基本信息
+if vc_data is not None and not vc_data.empty:
+    latest_date = vc_data.index.max()
+    earliest_date = vc_data.index.min()
+    total_records = len(vc_data)
+
+    st.sidebar.info(f"""
+    **数据概览:**
+    - 类型: {vc_type}
+    - 最早日期: {earliest_date.strftime('%Y-%m-%d')}
+    - 最新日期: {latest_date.strftime('%Y-%m-%d')}
+    - 总记录数: {total_records:,}
+    """)
+
+    # ==================== 时间范围选择 ====================
+    time_period = st.sidebar.selectbox(
+        "选择时间范围",
+        ["最近7天", "最近14天", "最近20天", "最近1个月", "最近2个月", "最近3个月", "最近6个月", "全部数据"],
+        index=2  # 默认选择最近20天
+    )
+
+    # 计算开始日期
+    end_date = pd.to_datetime('today')
+    if time_period == "最近7天":
+        start_date = end_date - timedelta(days=7)
+    elif time_period == "最近14天":
+        start_date = end_date - timedelta(days=14)
+    elif time_period == "最近20天":
+        start_date = end_date - timedelta(days=20)
+    elif time_period == "最近1个月":
+        start_date = end_date - timedelta(days=30)
+    elif time_period == "最近2个月":
+        start_date = end_date - timedelta(days=60)
+    elif time_period == "最近3个月":
+        start_date = end_date - timedelta(days=90)
+    elif time_period == "最近6个月":
+        start_date = end_date - timedelta(days=180)
+    else:  # 全部数据
+        start_date = earliest_date
+
+    # 筛选时间范围内的数据
+    time_filtered_data = vc_data[(vc_data.index >= start_date) & (vc_data.index <= end_date)].copy()
+
+    st.sidebar.success(f"**{time_period}** 内共有 **{len(time_filtered_data)}** 条记录")
+
+    # ==================== 数据筛选器 ====================
+    st.sidebar.markdown("---")
+    st.sidebar.title("🔍 数据筛选")
+
+    # Australia筛选
+    show_australia_only = st.sidebar.checkbox("🇦🇺 仅显示Australia相关港口", value=False)
+
+    if show_australia_only:
+        australia_mask = time_filtered_data.apply(contains_australian_info, axis=1)
+        time_filtered_data = time_filtered_data[australia_mask]
+        st.sidebar.info(f"Australia相关记录: {len(time_filtered_data)} 条")
+
+    # VC筛选器（只保留指定的4个字段）
+    st.sidebar.markdown("### VC筛选选项")
+
+    if not time_filtered_data.empty:
+        # loadPort 筛选
+        if 'loadPort' in time_filtered_data.columns:
+            all_load_ports = sorted(time_filtered_data['loadPort'].dropna().unique().tolist())
+            if all_load_ports:
+                selected_load_ports = st.sidebar.multiselect(
+                    "Load Port",
+                    options=all_load_ports,
+                    default=all_load_ports[:5] if len(all_load_ports) > 5 else all_load_ports,
+                    help="选择要显示的装载港口"
+                )
+                
+                if selected_load_ports:
+                    time_filtered_data = time_filtered_data[
+                        time_filtered_data['loadPort'].isin(selected_load_ports) | 
+                        time_filtered_data['loadPort'].isna()
+                    ]
+        
+        # loadArea 筛选
+        if 'loadArea' in time_filtered_data.columns:
+            all_load_areas = sorted(time_filtered_data['loadArea'].dropna().unique().tolist())
+            if all_load_areas:
+                selected_load_areas = st.sidebar.multiselect(
+                    "Load Area",
+                    options=all_load_areas,
+                    default=all_load_areas[:5] if len(all_load_areas) > 5 else all_load_areas,
+                    help="选择要显示的装载区域"
+                )
+                
+                if selected_load_areas:
+                    time_filtered_data = time_filtered_data[
+                        time_filtered_data['loadArea'].isin(selected_load_areas) | 
+                        time_filtered_data['loadArea'].isna()
+                    ]
+        
+        # dischargePort 筛选
+        if 'dischargePort' in time_filtered_data.columns:
+            all_discharge_ports = sorted(time_filtered_data['dischargePort'].dropna().unique().tolist())
+            if all_discharge_ports:
+                selected_discharge_ports = st.sidebar.multiselect(
+                    "Discharge Port",
+                    options=all_discharge_ports,
+                    default=all_discharge_ports[:5] if len(all_discharge_ports) > 5 else all_discharge_ports,
+                    help="选择要显示的卸货港口"
+                )
+                
+                if selected_discharge_ports:
+                    time_filtered_data = time_filtered_data[
+                        time_filtered_data['dischargePort'].isin(selected_discharge_ports) | 
+                        time_filtered_data['dischargePort'].isna()
+                    ]
+        
+        # VESSEL TYPE 筛选
+        if 'VESSEL TYPE' in time_filtered_data.columns:
+            all_vessel_types = sorted(time_filtered_data['VESSEL TYPE'].dropna().unique().tolist())
+            if all_vessel_types:
+                selected_vessel_types = st.sidebar.multiselect(
+                    "Vessel Type",
+                    options=all_vessel_types,
+                    default=all_vessel_types,
+                    help="选择要显示的船舶类型"
+                )
+                
+                if selected_vessel_types:
+                    time_filtered_data = time_filtered_data[
+                        time_filtered_data['VESSEL TYPE'].isin(selected_vessel_types) | 
+                        time_filtered_data['VESSEL TYPE'].isna()
+                    ]
+
+    # ==================== 主显示区域 ====================
+    # 页面标题显示当前选择的VC类型
+    st.subheader(f"{vc_type} - 历史数据查询")
+    
+    # 显示统计信息
+    if not time_filtered_data.empty:
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("VOYAGE类型", vc_type.replace('VOYAGE ', ''))
+        with col2:
+            st.metric("筛选后记录数", len(time_filtered_data))
+        with col3:
+            st.metric("日期范围", f"{time_filtered_data.index.min().strftime('%m-%d')} 至 {time_filtered_data.index.max().strftime('%m-%d')}")
+        with col4:
+            if show_australia_only:
+                st.metric("筛选模式", "Australia")
+            else:
+                st.metric("筛选模式", "全部港口")
+
+        st.markdown("---")
+
+        # 数据可视化 - 按日期统计
+        st.subheader("📈 数据趋势")
+        
+        # 按日期统计记录数
+        daily_counts = time_filtered_data.groupby(time_filtered_data.index.date).size()
+        
+        if len(daily_counts) > 1:
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                # 创建折线图
+                fig1 = go.Figure()
+                fig1.add_trace(go.Scatter(
+                    x=list(daily_counts.index),
+                    y=daily_counts.values,
+                    mode='lines+markers',
+                    name='每日记录数',
+                    line=dict(color='#1E88E5', width=2),
+                    marker=dict(size=6)
+                ))
+                
+                fig1.update_layout(
+                    title=f"{time_period} {vc_type}记录趋势",
+                    xaxis_title="日期",
+                    yaxis_title="记录数",
+                    height=300,
+                    template='plotly_white'
+                )
+                
+                st.plotly_chart(fig1, use_container_width=True)
+            
+            with col2:
+                # 显示统计摘要
+                st.markdown("#### 统计摘要")
+                st.write(f"**平均每日:** {daily_counts.mean():.1f}")
+                st.write(f"**最高单日:** {daily_counts.max()}")
+                st.write(f"**最低单日:** {daily_counts.min()}")
+                st.write(f"**总天数:** {len(daily_counts)}")
+        else:
+            st.info("数据时间跨度不足，无法显示趋势图")
+
+        # 船舶类型分布
+        if 'VESSEL TYPE' in time_filtered_data.columns and time_filtered_data['VESSEL TYPE'].notna().any():
+            vessel_counts = time_filtered_data['VESSEL TYPE'].value_counts()
+            
+            if len(vessel_counts) > 0:
+                st.subheader("🚢 船舶类型分布")
+                
+                col1, col2 = st.columns([2, 3])
+                
+                with col1:
+                    for vessel_type, count in vessel_counts.items():
+                        if pd.isna(vessel_type):
+                            continue
+                        percentage = (count / len(time_filtered_data)) * 100
+                        st.write(f"**{vessel_type}:** {count} 条 ({percentage:.1f}%)")
+                
+                with col2:
+                    if len(vessel_counts) > 1:
+                        fig2 = px.pie(
+                            values=vessel_counts.values,
+                            names=vessel_counts.index,
+                            title="船舶类型分布",
+                            height=300
+                        )
+                        st.plotly_chart(fig2, use_container_width=True)
+
+        # 热门港口分析（基于loadPort和dischargePort）
+        st.subheader("🌍 热门港口分析")
+        
+        port_columns = ['loadPort', 'dischargePort', 'loadArea']
+        port_data = {}
+        
+        for col in port_columns:
+            if col in time_filtered_data.columns:
+                port_counts = time_filtered_data[col].value_counts().head(5)  # 取前5
+                if not port_counts.empty:
+                    port_data[col] = port_counts
+        
+        if port_data:
+            # 显示港口热度表格
+            port_dfs = []
+            for col_name, counts in port_data.items():
+                temp_df = pd.DataFrame({
+                    '港口类型': col_name,
+                    '港口名称': counts.index,
+                    '出现次数': counts.values,
+                    '占比(%)': (counts.values / len(time_filtered_data) * 100).round(1)
+                })
+                port_dfs.append(temp_df)
+            
+            if port_dfs:
+                combined_port_df = pd.concat(port_dfs, ignore_index=True)
+                st.dataframe(
+                    combined_port_df,
+                    use_container_width=True,
+                    height=200
+                )
+
+        # ==================== 详细数据表格 ====================
+        st.markdown("---")
+        st.subheader("📋 详细数据")
+        
+        # 列选择器
+        available_columns = time_filtered_data.columns.tolist()
+        
+        # VC推荐显示的列（包含常用列，用户可以选择其他列）
+        vc_columns = [
+            'shipName', 'cargoSize', 'dwt', 'VESSEL TYPE', 
+            'loadPort', 'loadArea', 'dischargePort', 'freight', 
+            'charterer', 'comment', 'buildYear', 'freeText'
+        ]
+        
+        # 确保推荐的列都存在
+        default_columns = [col for col in vc_columns if col in available_columns]
+        
+        # 如果没有默认列，使用所有可用列
+        if not default_columns:
+            default_columns = available_columns[:10]
+        
+        visible_columns = st.multiselect(
+            "选择要显示的列",
+            options=available_columns,
+            default=default_columns
+        )
+        
+        if visible_columns:
+            # 准备显示数据
+            display_data = time_filtered_data[visible_columns].copy()
+            
+            # 添加日期列（索引）
+            display_data = display_data.reset_index()
+            
+            # 高亮Australia相关港口
+            if show_australia_only:
+                # 对Australia港口进行高亮
+                def highlight_australian(val):
+                    if pd.isna(val):
+                        return ''
+                    if is_australian_port(val):
+                        return f'<span style="background-color: #FFE5B4; font-weight: bold;">{val}</span>'
+                    return val
+                
+                # 应用高亮到港口相关列
+                port_columns_to_highlight = ['loadPort', 'dischargePort', 'loadArea']
+                for col in port_columns_to_highlight:
+                    if col in display_data.columns:
+                        display_data[col] = display_data[col].apply(highlight_australian)
+                
+                # 显示高亮后的表格
+                st.markdown(display_data.to_html(escape=False, index=False), unsafe_allow_html=True)
+            else:
+                # 普通显示
+                st.dataframe(
+                    display_data,
+                    use_container_width=True,
+                    height=400
+                )
+            
+            # 提供下载选项
+            st.markdown("---")
+            st.subheader("📥 数据导出")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # 下载CSV
+                csv = display_data.to_csv(index=False)
+                st.download_button(
+                    label="下载CSV格式",
+                    data=csv,
+                    file_name=f"{vc_type.lower().replace(' ', '_')}_{time_period}_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    help="下载为CSV文件，可用Excel打开"
+                )
+            
+            with col2:
+                # 下载Excel（需要openpyxl）
+                try:
+                    import openpyxl
+                    
+                    @st.cache_data
+                    def convert_to_excel(df):
+                        # 使用BytesIO避免创建临时文件
+                        import io
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            df.to_excel(writer, index=False, sheet_name='VC_Data')
+                        return output.getvalue()
+                    
+                    excel_data = convert_to_excel(display_data)
+                    st.download_button(
+                        label="下载Excel格式",
+                        data=excel_data,
+                        file_name=f"{vc_type.lower().replace(' ', '_')}_{time_period}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help="下载为Excel文件"
+                    )
+                except ImportError:
+                    st.info("如需Excel导出功能，请安装openpyxl: `pip install openpyxl`")
+        else:
+            st.warning("请选择至少一列进行显示")
+    else:
+        st.warning("没有符合筛选条件的数据")
+
+    # ==================== 底部信息 ====================
+    st.markdown("---")
+    st.markdown("""
+    ### 📊 使用说明
+
+    **数据来源：**
+    - 所有数据来自 `st.session_state` 对应的VC类型键
+    - 该数据在 **数据处理页面** 更新时自动加载
+    - 数据按日期倒序排列，最新记录显示在最前面
+
+    **VC类型说明：**
+    - **VOYAGE GRAIN**: 谷物航次租船
+    - **VOYAGE COAL**: 煤炭航次租船
+    - **VOYAGE MISC**: 杂货运次租船
+    - **VOYAGE ORE**: 矿石航次租船
+
+    **筛选功能：**
+    1. **VC类型**: 选择要查询的航次租船类型
+    2. **时间范围**: 选择要查看的时间段（7天到6个月）
+    3. **Australia筛选**: 勾选仅显示Australia相关港口的记录
+    4. **港口筛选**: 可以按loadPort, loadArea, dischargePort筛选
+    5. **船舶类型筛选**: 可以按VESSEL TYPE筛选
+    6. **数据可视化**: 查看数据趋势和分布
+    7. **数据导出**: 下载筛选后的数据为CSV或Excel格式
+
+    **数据更新：**
+    - 返回 **数据处理页面** 点击 **Update Data** 按钮
+    - 系统会自动获取最新数据并追加到历史文件中
+    - 建议每周更新一次以保持数据最新
+
+    **注意事项：**
+    - 所有筛选都在本地进行，不会影响原始数据文件
+    - 如果数据量很大，筛选可能需要几秒钟时间
+    - 确保有足够的内存处理历史数据
+    """)
+
+    # 添加刷新按钮
+    if st.button("🔄 刷新页面"):
+        st.cache_data.clear()
+        st.rerun()
+
+else:
+    st.error(f"没有可用的{vc_type}数据")
