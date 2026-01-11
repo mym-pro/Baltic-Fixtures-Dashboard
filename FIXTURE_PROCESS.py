@@ -184,8 +184,25 @@ def load_tc_data(days_back: int = 2):
     'buildYear', 'dwt', 'deliveryPort', 'freeText', 'loadArea', 
     'charterer', 'comment', 'tripDescriptionPeriodInfo', 'viaPortReletRateBallastBonus','fixtureString']
        # 确保所有需要的列都存在
+    # 确保所有需要的列都存在
     if 'fixtures' in df.columns and len(df) > 0:
-        fixtures_df = pd.DataFrame(df.loc[0, 'fixtures'])
+        # 修复：处理fixtures可能为单个字典的情况
+        fixtures = df.loc[0, 'fixtures']
+        
+        # 如果fixtures是字典（单个数据点），转换为列表
+        if isinstance(fixtures, dict):
+            fixtures = [fixtures]
+        
+        # 如果fixtures是空列表，直接返回None
+        if not fixtures:
+            st.warning("No fixtures data available in the response")
+            return None
+            
+        fixtures_df = pd.DataFrame(fixtures)  # 现在这里应该是安全的
+        
+        # 如果fixtures_df为空，直接返回None
+        if fixtures_df.empty:
+            return None
         
         spot_tcfix = (fixtures_df[use_cols]
                       .pipe(enrich, maps=TC_RE_MAPS)
@@ -277,8 +294,25 @@ def load_period_data(days_back: int = 2):
     'date', 'fixtureType', 'voyageType', 'shipName', 
     'buildYear', 'dwt', 'deliveryPort', 'freeText', 'loadArea', 
     'charterer', 'comment', 'tripDescriptionPeriodInfo', 'fixtureString']
+    # 确保所有需要的列都存在
     if 'fixtures' in df.columns and len(df) > 0:
-        fixtures_df = pd.DataFrame(df.loc[0, 'fixtures'])
+        # 修复：处理fixtures可能为单个字典的情况
+        fixtures = df.loc[0, 'fixtures']
+        
+        # 如果fixtures是字典（单个数据点），转换为列表
+        if isinstance(fixtures, dict):
+            fixtures = [fixtures]
+        
+        # 如果fixtures是空列表，直接返回None
+        if not fixtures:
+            st.warning("No fixtures data available in the response")
+            return None
+            
+        fixtures_df = pd.DataFrame(fixtures)  # 现在这里应该是安全的
+        
+        # 如果fixtures_df为空，直接返回None
+        if fixtures_df.empty:
+            return None
         
         spot_periodfix = (fixtures_df[use_cols]
                       .pipe(enrich, maps=PERIOD_RE_MAPS)
@@ -336,7 +370,6 @@ VC_RE_MAPS={
     'cargoSize': re.compile(r"(\d+/\d+)", re.I), #把70000/5这样的抓出来
     'freeText': re.compile(r"\b(\d+(?:/\d+)?\s+[A-Za-z]+)\b", re.I),#抓 数字+任意长度月份单词 或 prompt
     'comment': re.compile(r"<([^>]+)>", re.I),#取第一对尖括号 <...> 之间的任意字符
-    'redel': re.compile(r'\bredel\s+(.*?)(?=\s*\$)', re.I),#redel和$之间的内容
     'freight': re.compile(r'(\$.*?)(?:\s*)', re.I),#第一个美元符号开始、直到遇到空格前”的运费金额
 }
 @st.cache_data()
@@ -366,8 +399,25 @@ def load_voyage_grain_data(days_back: int = 2):
     'date', 'fixtureType', 'cargoSize','voyageType', 'shipName', 
     'buildYear', 'dwt',  'freeText', 'loadPort', 'dischargePort','rateAndTerms',
     'charterer', 'comment','fixtureString']
+    # 确保所有需要的列都存在
     if 'fixtures' in df.columns and len(df) > 0:
-        fixtures_df = pd.DataFrame(df.loc[0, 'fixtures'])
+        # 修复：处理fixtures可能为单个字典的情况
+        fixtures = df.loc[0, 'fixtures']
+        
+        # 如果fixtures是字典（单个数据点），转换为列表
+        if isinstance(fixtures, dict):
+            fixtures = [fixtures]
+        
+        # 如果fixtures是空列表，直接返回None
+        if not fixtures:
+            st.warning("No fixtures data available in the response")
+            return None
+            
+        fixtures_df = pd.DataFrame(fixtures)  # 现在这里应该是安全的
+        
+        # 如果fixtures_df为空，直接返回None
+        if fixtures_df.empty:
+            return None
         
         spot_vcgrfix = (fixtures_df[use_cols]
                       .pipe(enrich, maps=VC_RE_MAPS)
@@ -446,8 +496,25 @@ def load_voyage_coal_data(days_back: int = 2):
     'date', 'fixtureType', 'cargoSize','voyageType', 'shipName', 
     'buildYear', 'dwt',  'freeText', 'loadPort', 'dischargePort','rateAndTerms',
     'charterer', 'comment','fixtureString']
+    # 确保所有需要的列都存在
     if 'fixtures' in df.columns and len(df) > 0:
-        fixtures_df = pd.DataFrame(df.loc[0, 'fixtures'])
+        # 修复：处理fixtures可能为单个字典的情况
+        fixtures = df.loc[0, 'fixtures']
+        
+        # 如果fixtures是字典（单个数据点），转换为列表
+        if isinstance(fixtures, dict):
+            fixtures = [fixtures]
+        
+        # 如果fixtures是空列表，直接返回None
+        if not fixtures:
+            st.warning("No fixtures data available in the response")
+            return None
+            
+        fixtures_df = pd.DataFrame(fixtures)  # 现在这里应该是安全的
+        
+        # 如果fixtures_df为空，直接返回None
+        if fixtures_df.empty:
+            return None
         
         spot_vccofix = (fixtures_df[use_cols]
                       .pipe(enrich, maps=VC_RE_MAPS)
@@ -526,8 +593,25 @@ def load_voyage_misc_data(days_back: int = 2):
     'date', 'fixtureType', 'cargoSize','voyageType', 'shipName', 
     'buildYear', 'dwt',  'freeText', 'loadPort', 'dischargePort','rateAndTerms',
     'charterer', 'comment','fixtureString']
+    # 确保所有需要的列都存在
     if 'fixtures' in df.columns and len(df) > 0:
-        fixtures_df = pd.DataFrame(df.loc[0, 'fixtures'])
+        # 修复：处理fixtures可能为单个字典的情况
+        fixtures = df.loc[0, 'fixtures']
+        
+        # 如果fixtures是字典（单个数据点），转换为列表
+        if isinstance(fixtures, dict):
+            fixtures = [fixtures]
+        
+        # 如果fixtures是空列表，直接返回None
+        if not fixtures:
+            st.warning("No fixtures data available in the response")
+            return None
+            
+        fixtures_df = pd.DataFrame(fixtures)  # 现在这里应该是安全的
+        
+        # 如果fixtures_df为空，直接返回None
+        if fixtures_df.empty:
+            return None
         
         spot_vcmifix = (fixtures_df[use_cols]
                       .pipe(enrich, maps=VC_RE_MAPS)
@@ -606,8 +690,25 @@ def load_voyage_ore_data(days_back: int = 2):
     'date', 'fixtureType', 'cargoSize','voyageType', 'shipName', 
     'buildYear', 'dwt',  'freeText', 'loadPort', 'dischargePort','rateAndTerms',
     'charterer', 'comment','fixtureString']
+    # 确保所有需要的列都存在
     if 'fixtures' in df.columns and len(df) > 0:
-        fixtures_df = pd.DataFrame(df.loc[0, 'fixtures'])
+        # 修复：处理fixtures可能为单个字典的情况
+        fixtures = df.loc[0, 'fixtures']
+        
+        # 如果fixtures是字典（单个数据点），转换为列表
+        if isinstance(fixtures, dict):
+            fixtures = [fixtures]
+        
+        # 如果fixtures是空列表，直接返回None
+        if not fixtures:
+            st.warning("No fixtures data available in the response")
+            return None
+            
+        fixtures_df = pd.DataFrame(fixtures)  # 现在这里应该是安全的
+        
+        # 如果fixtures_df为空，直接返回None
+        if fixtures_df.empty:
+            return None
         
         spot_vcorfix = (fixtures_df[use_cols]
                       .pipe(enrich, maps=VC_RE_MAPS)
