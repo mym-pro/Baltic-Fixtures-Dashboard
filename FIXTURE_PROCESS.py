@@ -266,7 +266,17 @@ def process_tc_data(all_data, api_configs, days_back: int = 2):
         st.warning("未获取到TIMECHARTER数据，尝试加载本地数据")
         file_path = 'timecharter.csv'
         if os.path.exists(file_path):
-            return pd.read_csv(file_path, parse_dates=['date']).set_index('date')
+            try:
+                spot_old = pd.read_csv(file_path, parse_dates=['date'])
+                if not spot_old.empty:
+                    spot_old.set_index('date', inplace=True)
+                    return spot_old
+                else:
+                    st.warning("本地TIMECHARTER数据文件为空")
+                    return None
+            except Exception as e:
+                st.error(f"读取本地TIMECHARTER数据失败: {e}")
+                return None
         return None
     
     try:
@@ -305,45 +315,59 @@ def process_tc_data(all_data, api_configs, days_back: int = 2):
         # 读取或创建旧数据文件，如果没有旧数据文件则创建
         file_path = 'timecharter.csv'
         if os.path.exists(file_path):
-            spot_old = pd.read_csv(file_path, parse_dates=['date'])
-            spot_old.set_index('date', inplace=True)
+            try:
+                spot_old = pd.read_csv(file_path, parse_dates=['date'])
+                if not spot_old.empty:
+                    spot_old.set_index('date', inplace=True)
 
-            # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
-            if 'VESSEL TYPE' not in spot_old.columns:
-                spot_old = add_vessel_type(spot_old)
+                    # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
+                    if 'VESSEL TYPE' not in spot_old.columns:
+                        spot_old = add_vessel_type(spot_old)
 
-            st.text(f'TIMECHARTER Fixtures Data Before Update: {spot_old.index[-1].date()}')
-            
-            # 合并数据 - 只保留不在旧数据中的新数据
-            # 假设新数据的日期都在旧数据最新日期之后
-            last_date = spot_old.index.max()
-            new_data = spot_tcfix[spot_tcfix.index > last_date]
-            
-            if not new_data.empty:
-                spot = pd.concat([spot_old, new_data])
-            else:
-                spot = spot_old
-                st.info("TIMECHARTER: No new data to add.")
+                    st.text(f'TIMECHARTER Fixtures Data Before Update: {spot_old.index[-1].date()}')
+                    
+                    # 合并数据 - 只保留不在旧数据中的新数据
+                    # 假设新数据的日期都在旧数据最新日期之后
+                    last_date = spot_old.index.max()
+                    new_data = spot_tcfix[spot_tcfix.index > last_date]
+                    
+                    if not new_data.empty:
+                        spot = pd.concat([spot_old, new_data])
+                    else:
+                        spot = spot_old
+                        st.info("TIMECHARTER: No new data to add.")
+                else:
+                    # 旧数据文件为空，直接使用新数据
+                    st.warning("TIMECHARTER 本地数据文件为空，使用新数据")
+                    spot = spot_tcfix
+            except Exception as e:
+                st.error(f"读取TIMECHARTER本地数据失败: {e}")
+                spot = spot_tcfix
         else:
             spot = spot_tcfix
             st.text("Creating new TIMECHARTER data file.")
         
         # 去重
-        spot = spot.reset_index()
-        spot = spot.drop_duplicates(subset=['date', 'shipName'], keep='last')
-        spot.set_index('date', inplace=True)
-        spot.sort_index(inplace=True)
+        if not spot.empty:
+            spot = spot.reset_index()
+            spot = spot.drop_duplicates(subset=['date', 'shipName'], keep='last')
+            spot.set_index('date', inplace=True)
+            spot.sort_index(inplace=True)
+            
+            st.text(f'TIMECHARTER Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
+            st.text(f'Total records: {len(spot)}')
+            
+            # 保存
+            spot.to_csv(file_path, index_label='date')
+        else:
+            st.warning("TIMECHARTER: 处理后的数据为空，不保存")
         
-        st.text(f'TIMECHARTER Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
-        st.text(f'Total records: {len(spot)}')
-        
-        # 保存
-        spot.to_csv(file_path, index_label='date')
-        
-        return spot
+        return spot if not spot.empty else None
     
     except Exception as e:
         st.error(f"处理TIMECHARTER数据时出错: {e}")
+        import traceback
+        st.error(traceback.format_exc())
         return None
 
 # ==================== PERIOD类型正则补全使用 ====================
@@ -369,7 +393,17 @@ def process_period_data(all_data, api_configs, days_back: int = 2):
         st.warning("未获取到PERIOD数据，尝试加载本地数据")
         file_path = 'periodcharter.csv'
         if os.path.exists(file_path):
-            return pd.read_csv(file_path, parse_dates=['date']).set_index('date')
+            try:
+                spot_old = pd.read_csv(file_path, parse_dates=['date'])
+                if not spot_old.empty:
+                    spot_old.set_index('date', inplace=True)
+                    return spot_old
+                else:
+                    st.warning("本地PERIOD数据文件为空")
+                    return None
+            except Exception as e:
+                st.error(f"读取本地PERIOD数据失败: {e}")
+                return None
         return None
     
     try:
@@ -407,43 +441,67 @@ def process_period_data(all_data, api_configs, days_back: int = 2):
         # 读取或创建旧数据文件，如果没有旧数据文件则创建
         file_path = 'periodcharter.csv'
         if os.path.exists(file_path):
-            spot_old = pd.read_csv(file_path, parse_dates=['date'])
-            spot_old.set_index('date', inplace=True)
-            # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
-            if 'VESSEL TYPE' not in spot_old.columns:
-                spot_old = add_vessel_type(spot_old)
-            st.text(f'PERIOD Fixtures Data Before Update: {spot_old.index[-1].date()}')
-            
-            # 合并数据 - 只保留不在旧数据中的新数据
-            # 假设新数据的日期都在旧数据最新日期之后
-            last_date = spot_old.index.max()
-            new_data = spot_periodfix[spot_periodfix.index > last_date]
-            
-            if not new_data.empty:
-                spot = pd.concat([spot_old, new_data])
-            else:
-                spot = spot_old
-                st.info("PERIOD: No new data to add.")
+            try:
+                spot_old = pd.read_csv(file_path, parse_dates=['date'])
+                if not spot_old.empty:
+                    spot_old.set_index('date', inplace=True)
+                    # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
+                    if 'VESSEL TYPE' not in spot_old.columns:
+                        spot_old = add_vessel_type(spot_old)
+                    
+                    if not spot_old.empty:
+                        st.text(f'PERIOD Fixtures Data Before Update: {spot_old.index[-1].date()}')
+                    
+                    # 合并数据 - 只保留不在旧数据中的新数据
+                    # 假设新数据的日期都在旧数据最新日期之后
+                    last_date = spot_old.index.max() if not spot_old.empty else None
+                    
+                    if last_date is not None:
+                        new_data = spot_periodfix[spot_periodfix.index > last_date]
+                    else:
+                        new_data = spot_periodfix
+                    
+                    if not new_data.empty:
+                        if not spot_old.empty:
+                            spot = pd.concat([spot_old, new_data])
+                        else:
+                            spot = new_data
+                    else:
+                        spot = spot_old if not spot_old.empty else None
+                        st.info("PERIOD: No new data to add.")
+                else:
+                    # 旧数据文件为空，直接使用新数据
+                    st.warning("PERIOD 本地数据文件为空，使用新数据")
+                    spot = spot_periodfix
+            except Exception as e:
+                st.error(f"读取PERIOD本地数据失败: {e}")
+                spot = spot_periodfix
         else:
             spot = spot_periodfix
             st.text("Creating new PERIOD data file.")
         
         # 去重
-        spot = spot.reset_index()
-        spot = spot.drop_duplicates(subset=['date', 'shipName'], keep='last')
-        spot.set_index('date', inplace=True)
-        spot.sort_index(inplace=True)
-        
-        st.text(f'PERIOD Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
-        st.text(f'Total records: {len(spot)}')
-        
-        # 保存
-        spot.to_csv(file_path, index_label='date')
+        if spot is not None and not spot.empty:
+            spot = spot.reset_index()
+            spot = spot.drop_duplicates(subset=['date', 'shipName'], keep='last')
+            spot.set_index('date', inplace=True)
+            spot.sort_index(inplace=True)
+            
+            st.text(f'PERIOD Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
+            st.text(f'Total records: {len(spot)}')
+            
+            # 保存
+            spot.to_csv(file_path, index_label='date')
+        else:
+            st.warning("PERIOD: 处理后的数据为空，不保存")
+            spot = None
         
         return spot
     
     except Exception as e:
         st.error(f"处理PERIOD数据时出错: {e}")
+        import traceback
+        st.error(traceback.format_exc())
         return None
 
 # ==================== VOYAGE类型正则补全使用 ====================
@@ -467,7 +525,17 @@ def process_voyage_grain_data(all_data, api_configs, days_back: int = 2):
         st.warning("未获取到VOYAGE(GRAIN)数据，尝试加载本地数据")
         file_path = 'vcgrain.csv'
         if os.path.exists(file_path):
-            return pd.read_csv(file_path, parse_dates=['date']).set_index('date')
+            try:
+                spot_old = pd.read_csv(file_path, parse_dates=['date'])
+                if not spot_old.empty:
+                    spot_old.set_index('date', inplace=True)
+                    return spot_old
+                else:
+                    st.warning("本地VOYAGE(GRAIN)数据文件为空")
+                    return None
+            except Exception as e:
+                st.error(f"读取本地VOYAGE(GRAIN)数据失败: {e}")
+                return None
         return None
     
     try:
@@ -505,43 +573,67 @@ def process_voyage_grain_data(all_data, api_configs, days_back: int = 2):
         # 读取或创建旧数据文件，如果没有旧数据文件则创建
         file_path = 'vcgrain.csv'
         if os.path.exists(file_path):
-            spot_old = pd.read_csv(file_path, parse_dates=['date'])
-            spot_old.set_index('date', inplace=True)
-            # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
-            if 'VESSEL TYPE' not in spot_old.columns:
-                spot_old = add_vessel_type(spot_old)
-            st.text(f'VOYAGE(GRAIN) Fixtures Data Before Update: {spot_old.index[-1].date()}')
-            
-            # 合并数据 - 只保留不在旧数据中的新数据
-            # 假设新数据的日期都在旧数据最新日期之后
-            last_date = spot_old.index.max()
-            new_data = spot_vcgrfix[spot_vcgrfix.index > last_date]
-            
-            if not new_data.empty:
-                spot = pd.concat([spot_old, new_data])
-            else:
-                spot = spot_old
-                st.info("VOYAGE(GRAIN): No new data to add.")
+            try:
+                spot_old = pd.read_csv(file_path, parse_dates=['date'])
+                if not spot_old.empty:
+                    spot_old.set_index('date', inplace=True)
+                    # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
+                    if 'VESSEL TYPE' not in spot_old.columns:
+                        spot_old = add_vessel_type(spot_old)
+                    
+                    if not spot_old.empty:
+                        st.text(f'VOYAGE(GRAIN) Fixtures Data Before Update: {spot_old.index[-1].date()}')
+                    
+                    # 合并数据 - 只保留不在旧数据中的新数据
+                    # 假设新数据的日期都在旧数据最新日期之后
+                    last_date = spot_old.index.max() if not spot_old.empty else None
+                    
+                    if last_date is not None:
+                        new_data = spot_vcgrfix[spot_vcgrfix.index > last_date]
+                    else:
+                        new_data = spot_vcgrfix
+                    
+                    if not new_data.empty:
+                        if not spot_old.empty:
+                            spot = pd.concat([spot_old, new_data])
+                        else:
+                            spot = new_data
+                    else:
+                        spot = spot_old if not spot_old.empty else None
+                        st.info("VOYAGE(GRAIN): No new data to add.")
+                else:
+                    # 旧数据文件为空，直接使用新数据
+                    st.warning("VOYAGE(GRAIN) 本地数据文件为空，使用新数据")
+                    spot = spot_vcgrfix
+            except Exception as e:
+                st.error(f"读取VOYAGE(GRAIN)本地数据失败: {e}")
+                spot = spot_vcgrfix
         else:
             spot = spot_vcgrfix
             st.text("Creating new VOYAGE(GRAIN) data file.")
         
         # 去重
-        spot = spot.reset_index()
-        spot = spot.drop_duplicates(subset=['date', 'shipName'], keep='last')
-        spot.set_index('date', inplace=True)
-        spot.sort_index(inplace=True)
-        
-        st.text(f'VOYAGE(GRAIN) Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
-        st.text(f'Total records: {len(spot)}')
-        
-        # 保存
-        spot.to_csv(file_path, index_label='date')
+        if spot is not None and not spot.empty:
+            spot = spot.reset_index()
+            spot = spot.drop_duplicates(subset=['date', 'shipName'], keep='last')
+            spot.set_index('date', inplace=True)
+            spot.sort_index(inplace=True)
+            
+            st.text(f'VOYAGE(GRAIN) Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
+            st.text(f'Total records: {len(spot)}')
+            
+            # 保存
+            spot.to_csv(file_path, index_label='date')
+        else:
+            st.warning("VOYAGE(GRAIN): 处理后的数据为空，不保存")
+            spot = None
         
         return spot
     
     except Exception as e:
         st.error(f"处理VOYAGE(GRAIN)数据时出错: {e}")
+        import traceback
+        st.error(traceback.format_exc())
         return None
 
 @st.cache_data()
@@ -554,7 +646,17 @@ def process_voyage_coal_data(all_data, api_configs, days_back: int = 2):
         st.warning("未获取到VOYAGE(COAL)数据，尝试加载本地数据")
         file_path = 'vccoal.csv'
         if os.path.exists(file_path):
-            return pd.read_csv(file_path, parse_dates=['date']).set_index('date')
+            try:
+                spot_old = pd.read_csv(file_path, parse_dates=['date'])
+                if not spot_old.empty:
+                    spot_old.set_index('date', inplace=True)
+                    return spot_old
+                else:
+                    st.warning("本地VOYAGE(COAL)数据文件为空")
+                    return None
+            except Exception as e:
+                st.error(f"读取本地VOYAGE(COAL)数据失败: {e}")
+                return None
         return None
     
     try:
@@ -592,43 +694,67 @@ def process_voyage_coal_data(all_data, api_configs, days_back: int = 2):
         # 读取或创建旧数据文件，如果没有旧数据文件则创建
         file_path = 'vccoal.csv'
         if os.path.exists(file_path):
-            spot_old = pd.read_csv(file_path, parse_dates=['date'])
-            spot_old.set_index('date', inplace=True)
-            # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
-            if 'VESSEL TYPE' not in spot_old.columns:
-                spot_old = add_vessel_type(spot_old)
-            st.text(f'VOYAGE(COAL) Fixtures Data Before Update: {spot_old.index[-1].date()}')
-            
-            # 合并数据 - 只保留不在旧数据中的新数据
-            # 假设新数据的日期都在旧数据最新日期之后
-            last_date = spot_old.index.max()
-            new_data = spot_vccofix[spot_vccofix.index > last_date]
-            
-            if not new_data.empty:
-                spot = pd.concat([spot_old, new_data])
-            else:
-                spot = spot_old
-                st.info("VOYAGE(COAL): No new data to add.")
+            try:
+                spot_old = pd.read_csv(file_path, parse_dates=['date'])
+                if not spot_old.empty:
+                    spot_old.set_index('date', inplace=True)
+                    # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
+                    if 'VESSEL TYPE' not in spot_old.columns:
+                        spot_old = add_vessel_type(spot_old)
+                    
+                    if not spot_old.empty:
+                        st.text(f'VOYAGE(COAL) Fixtures Data Before Update: {spot_old.index[-1].date()}')
+                    
+                    # 合并数据 - 只保留不在旧数据中的新数据
+                    # 假设新数据的日期都在旧数据最新日期之后
+                    last_date = spot_old.index.max() if not spot_old.empty else None
+                    
+                    if last_date is not None:
+                        new_data = spot_vccofix[spot_vccofix.index > last_date]
+                    else:
+                        new_data = spot_vccofix
+                    
+                    if not new_data.empty:
+                        if not spot_old.empty:
+                            spot = pd.concat([spot_old, new_data])
+                        else:
+                            spot = new_data
+                    else:
+                        spot = spot_old if not spot_old.empty else None
+                        st.info("VOYAGE(COAL): No new data to add.")
+                else:
+                    # 旧数据文件为空，直接使用新数据
+                    st.warning("VOYAGE(COAL) 本地数据文件为空，使用新数据")
+                    spot = spot_vccofix
+            except Exception as e:
+                st.error(f"读取VOYAGE(COAL)本地数据失败: {e}")
+                spot = spot_vccofix
         else:
             spot = spot_vccofix
             st.text("Creating new VOYAGE(COAL) data file.")
         
         # 去重
-        spot = spot.reset_index()
-        spot = spot.drop_duplicates(subset=['date', 'shipName'], keep='last')
-        spot.set_index('date', inplace=True)
-        spot.sort_index(inplace=True)
-        
-        st.text(f'VOYAGE(COAL) Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
-        st.text(f'Total records: {len(spot)}')
-        
-        # 保存
-        spot.to_csv(file_path, index_label='date')
+        if spot is not None and not spot.empty:
+            spot = spot.reset_index()
+            spot = spot.drop_duplicates(subset=['date', 'shipName'], keep='last')
+            spot.set_index('date', inplace=True)
+            spot.sort_index(inplace=True)
+            
+            st.text(f'VOYAGE(COAL) Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
+            st.text(f'Total records: {len(spot)}')
+            
+            # 保存
+            spot.to_csv(file_path, index_label='date')
+        else:
+            st.warning("VOYAGE(COAL): 处理后的数据为空，不保存")
+            spot = None
         
         return spot
     
     except Exception as e:
         st.error(f"处理VOYAGE(COAL)数据时出错: {e}")
+        import traceback
+        st.error(traceback.format_exc())
         return None
 
 @st.cache_data()
@@ -641,7 +767,17 @@ def process_voyage_misc_data(all_data, api_configs, days_back: int = 2):
         st.warning("未获取到VOYAGE(MISC)数据，尝试加载本地数据")
         file_path = 'vcmisc.csv'
         if os.path.exists(file_path):
-            return pd.read_csv(file_path, parse_dates=['date']).set_index('date')
+            try:
+                spot_old = pd.read_csv(file_path, parse_dates=['date'])
+                if not spot_old.empty:
+                    spot_old.set_index('date', inplace=True)
+                    return spot_old
+                else:
+                    st.warning("本地VOYAGE(MISC)数据文件为空")
+                    return None
+            except Exception as e:
+                st.error(f"读取本地VOYAGE(MISC)数据失败: {e}")
+                return None
         return None
     
     try:
@@ -678,43 +814,67 @@ def process_voyage_misc_data(all_data, api_configs, days_back: int = 2):
         # 读取或创建旧数据文件，如果没有旧数据文件则创建
         file_path = 'vcmisc.csv'
         if os.path.exists(file_path):
-            spot_old = pd.read_csv(file_path, parse_dates=['date'])
-            spot_old.set_index('date', inplace=True)
-            # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
-            if 'VESSEL TYPE' not in spot_old.columns:
-                spot_old = add_vessel_type(spot_old)
-            st.text(f'VOYAGE(MISC) Fixtures Data Before Update: {spot_old.index[-1].date()}')
-            
-            # 合并数据 - 只保留不在旧数据中的新数据
-            # 假设新数据的日期都在旧数据最新日期之后
-            last_date = spot_old.index.max()
-            new_data = spot_vcmifix[spot_vcmifix.index > last_date]
-            
-            if not new_data.empty:
-                spot = pd.concat([spot_old, new_data])
-            else:
-                spot = spot_old
-                st.info("VOYAGE(MISC): No new data to add.")
+            try:
+                spot_old = pd.read_csv(file_path, parse_dates=['date'])
+                if not spot_old.empty:
+                    spot_old.set_index('date', inplace=True)
+                    # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
+                    if 'VESSEL TYPE' not in spot_old.columns:
+                        spot_old = add_vessel_type(spot_old)
+                    
+                    if not spot_old.empty:
+                        st.text(f'VOYAGE(MISC) Fixtures Data Before Update: {spot_old.index[-1].date()}')
+                    
+                    # 合并数据 - 只保留不在旧数据中的新数据
+                    # 假设新数据的日期都在旧数据最新日期之后
+                    last_date = spot_old.index.max() if not spot_old.empty else None
+                    
+                    if last_date is not None:
+                        new_data = spot_vcmifix[spot_vcmifix.index > last_date]
+                    else:
+                        new_data = spot_vcmifix
+                    
+                    if not new_data.empty:
+                        if not spot_old.empty:
+                            spot = pd.concat([spot_old, new_data])
+                        else:
+                            spot = new_data
+                    else:
+                        spot = spot_old if not spot_old.empty else None
+                        st.info("VOYAGE(MISC): No new data to add.")
+                else:
+                    # 旧数据文件为空，直接使用新数据
+                    st.warning("VOYAGE(MISC) 本地数据文件为空，使用新数据")
+                    spot = spot_vcmifix
+            except Exception as e:
+                st.error(f"读取VOYAGE(MISC)本地数据失败: {e}")
+                spot = spot_vcmifix
         else:
             spot = spot_vcmifix
             st.text("Creating new VOYAGE(MISC) data file.")
         
         # 去重
-        spot = spot.reset_index()
-        spot = spot.drop_duplicates(subset=['date', 'shipName'], keep='last')
-        spot.set_index('date', inplace=True)
-        spot.sort_index(inplace=True)
-        
-        st.text(f'VOYAGE(MISC) Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
-        st.text(f'Total records: {len(spot)}')
-        
-        # 保存
-        spot.to_csv(file_path, index_label='date')
+        if spot is not None and not spot.empty:
+            spot = spot.reset_index()
+            spot = spot.drop_duplicates(subset=['date', 'shipName'], keep='last')
+            spot.set_index('date', inplace=True)
+            spot.sort_index(inplace=True)
+            
+            st.text(f'VOYAGE(MISC) Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
+            st.text(f'Total records: {len(spot)}')
+            
+            # 保存
+            spot.to_csv(file_path, index_label='date')
+        else:
+            st.warning("VOYAGE(MISC): 处理后的数据为空，不保存")
+            spot = None
         
         return spot
     
     except Exception as e:
         st.error(f"处理VOYAGE(MISC)数据时出错: {e}")
+        import traceback
+        st.error(traceback.format_exc())
         return None
 
 @st.cache_data()
@@ -727,7 +887,17 @@ def process_voyage_ore_data(all_data, api_configs, days_back: int = 2):
         st.warning("未获取到VOYAGE(ORE)数据，尝试加载本地数据")
         file_path = 'vcore.csv'
         if os.path.exists(file_path):
-            return pd.read_csv(file_path, parse_dates=['date']).set_index('date')
+            try:
+                spot_old = pd.read_csv(file_path, parse_dates=['date'])
+                if not spot_old.empty:
+                    spot_old.set_index('date', inplace=True)
+                    return spot_old
+                else:
+                    st.warning("本地VOYAGE(ORE)数据文件为空")
+                    return None
+            except Exception as e:
+                st.error(f"读取本地VOYAGE(ORE)数据失败: {e}")
+                return None
         return None
     
     try:
@@ -764,43 +934,67 @@ def process_voyage_ore_data(all_data, api_configs, days_back: int = 2):
         # 读取或创建旧数据文件，如果没有旧数据文件则创建
         file_path = 'vcore.csv'
         if os.path.exists(file_path):
-            spot_old = pd.read_csv(file_path, parse_dates=['date'])
-            spot_old.set_index('date', inplace=True)
-            # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
-            if 'VESSEL TYPE' not in spot_old.columns:
-                spot_old = add_vessel_type(spot_old)
-            st.text(f'VOYAGE(ORE) Fixtures Data Before Update: {spot_old.index[-1].date()}')
-            
-            # 合并数据 - 只保留不在旧数据中的新数据
-            # 假设新数据的日期都在旧数据最新日期之后
-            last_date = spot_old.index.max()
-            new_data = spot_vcorfix[spot_vcorfix.index > last_date]
-            
-            if not new_data.empty:
-                spot = pd.concat([spot_old, new_data])
-            else:
-                spot = spot_old
-                st.info("VOYAGE(ORE): No new data to add.")
+            try:
+                spot_old = pd.read_csv(file_path, parse_dates=['date'])
+                if not spot_old.empty:
+                    spot_old.set_index('date', inplace=True)
+                    # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
+                    if 'VESSEL TYPE' not in spot_old.columns:
+                        spot_old = add_vessel_type(spot_old)
+                    
+                    if not spot_old.empty:
+                        st.text(f'VOYAGE(ORE) Fixtures Data Before Update: {spot_old.index[-1].date()}')
+                    
+                    # 合并数据 - 只保留不在旧数据中的新数据
+                    # 假设新数据的日期都在旧数据最新日期之后
+                    last_date = spot_old.index.max() if not spot_old.empty else None
+                    
+                    if last_date is not None:
+                        new_data = spot_vcorfix[spot_vcorfix.index > last_date]
+                    else:
+                        new_data = spot_vcorfix
+                    
+                    if not new_data.empty:
+                        if not spot_old.empty:
+                            spot = pd.concat([spot_old, new_data])
+                        else:
+                            spot = new_data
+                    else:
+                        spot = spot_old if not spot_old.empty else None
+                        st.info("VOYAGE(ORE): No new data to add.")
+                else:
+                    # 旧数据文件为空，直接使用新数据
+                    st.warning("VOYAGE(ORE) 本地数据文件为空，使用新数据")
+                    spot = spot_vcorfix
+            except Exception as e:
+                st.error(f"读取VOYAGE(ORE)本地数据失败: {e}")
+                spot = spot_vcorfix
         else:
             spot = spot_vcorfix
             st.text("Creating new VOYAGE(ORE) data file.")
         
         # 去重
-        spot = spot.reset_index()
-        spot = spot.drop_duplicates(subset=['date', 'shipName'], keep='last')
-        spot.set_index('date', inplace=True)
-        spot.sort_index(inplace=True)
-        
-        st.text(f'VOYAGE(ORE) Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
-        st.text(f'Total records: {len(spot)}')
-        
-        # 保存
-        spot.to_csv(file_path, index_label='date')
+        if spot is not None and not spot.empty:
+            spot = spot.reset_index()
+            spot = spot.drop_duplicates(subset=['date', 'shipName'], keep='last')
+            spot.set_index('date', inplace=True)
+            spot.sort_index(inplace=True)
+            
+            st.text(f'VOYAGE(ORE) Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
+            st.text(f'Total records: {len(spot)}')
+            
+            # 保存
+            spot.to_csv(file_path, index_label='date')
+        else:
+            st.warning("VOYAGE(ORE): 处理后的数据为空，不保存")
+            spot = None
         
         return spot
     
     except Exception as e:
         st.error(f"处理VOYAGE(ORE)数据时出错: {e}")
+        import traceback
+        st.error(traceback.format_exc())
         return None
 
 # ==================== 数据加载主函数 ====================
@@ -835,36 +1029,48 @@ st.text("处理TIMECHARTER数据...")
 tc_spot = process_tc_data(all_data, api_configs, days_back)
 if tc_spot is not None and 'tc_spot' not in st.session_state:
     st.session_state['tc_spot'] = tc_spot
+elif tc_spot is None:
+    st.warning("TIMECHARTER数据为空")
 
 # 处理PERIOD数据
 st.text("处理PERIOD数据...")
 period_spot = process_period_data(all_data, api_configs, days_back)
 if period_spot is not None and 'period_spot' not in st.session_state:
     st.session_state['period_spot'] = period_spot
+elif period_spot is None:
+    st.warning("PERIOD数据为空")
 
 # 处理VOYAGE(GRAIN)数据
 st.text("处理VOYAGE(GRAIN)数据...")
 vcgr_spot = process_voyage_grain_data(all_data, api_configs, days_back)
 if vcgr_spot is not None and 'vcgr_spot' not in st.session_state:
     st.session_state['vcgr_spot'] = vcgr_spot
+elif vcgr_spot is None:
+    st.warning("VOYAGE(GRAIN)数据为空")
 
 # 处理VOYAGE(COAL)数据
 st.text("处理VOYAGE(COAL)数据...")
 vcco_spot = process_voyage_coal_data(all_data, api_configs, days_back)
 if vcco_spot is not None and 'vcco_spot' not in st.session_state:
     st.session_state['vcco_spot'] = vcco_spot
+elif vcco_spot is None:
+    st.warning("VOYAGE(COAL)数据为空")
 
 # 处理VOYAGE(MISC)数据
 st.text("处理VOYAGE(MISC)数据...")
 vcmi_spot = process_voyage_misc_data(all_data, api_configs, days_back)
 if vcmi_spot is not None and 'vcmi_spot' not in st.session_state:
     st.session_state['vcmi_spot'] = vcmi_spot
+elif vcmi_spot is None:
+    st.warning("VOYAGE(MISC)数据为空")
 
 # 处理VOYAGE(ORE)数据
 st.text("处理VOYAGE(ORE)数据...")
 vcor_spot = process_voyage_ore_data(all_data, api_configs, days_back)
 if vcor_spot is not None and 'vcor_spot' not in st.session_state:
     st.session_state['vcor_spot'] = vcor_spot
+elif vcor_spot is None:
+    st.warning("VOYAGE(ORE)数据为空")
 
 st.text('Fixture Data Done')
 st.write('All Data Loaded!!')
