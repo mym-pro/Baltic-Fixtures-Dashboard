@@ -18,10 +18,119 @@ import os
 from pathlib import Path
 import ftplib #波罗的海官网/部分经纪行仍提供 FTP 下载（txt/csv 格式），用来自动抓历史指数。
 import random  # 用于随机延迟，避免固定模式被识别为爬虫
+import base64
+from io import BytesIO
+from github import Github
 
 pd.set_option('display.max_rows',None)
 pd.set_option('display.max_columns',None)
 #让 DataFrame 不管多少行都 全部打印出来，不再出现中间省略号，这两行只是方便 开发调试阶段 在控制台里一眼看全表；上线后可以保留，也可以删掉，对最终用户界面没有任何影响。
+
+# GitHub配置 - 从streamlit secrets获取
+try:
+    GITHUB_TOKEN = st.secrets.github.token
+    REPO_NAME = st.secrets.github.repo
+    ENABLE_GITHUB_SAVE = True
+    st.text("GitHub配置已加载")
+except Exception as e:
+    GITHUB_TOKEN = None
+    REPO_NAME = None
+    ENABLE_GITHUB_SAVE = False
+    st.warning("未配置GitHub保存，请配置secrets.toml文件")
+
+# GitHub数据管理器类
+class GitHubFixtureManager:
+    def __init__(self, repo_name: str, github_token: str):
+        self.repo_name = repo_name
+        self.github_token = github_token
+        self.g = Github(github_token)
+        self.repo = self.g.get_repo(repo_name)
+        self.base_path = 'fixture_data'
+    
+    def save_fixture_data(self, df: pd.DataFrame, file_name: str, data_type: str):
+        """保存fixture数据到GitHub"""
+        if df is None or df.empty:
+            st.warning(f"{data_type}数据为空，跳过保存")
+            return False
+        
+        try:
+            # 准备数据 - 确保有date列
+            if df.index.name == 'date':
+                df = df.reset_index()
+            elif 'date' not in df.columns:
+                st.error(f"{data_type}数据缺少date列，无法保存")
+                return False
+            
+            # 转换日期格式
+            df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
+            
+            # 将DataFrame转换为CSV字符串
+            csv_data = df.to_csv(index=False)
+            
+            # 完整的文件路径
+            full_path = f"{self.base_path}/{file_name}"
+            
+            # 尝试获取现有文件
+            try:
+                contents = self.repo.get_contents(full_path)
+                # 文件存在，更新
+                self.repo.update_file(
+                    full_path,
+                    f"更新{data_type}数据 - {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}",
+                    csv_data,
+                    contents.sha
+                )
+                st.success(f"{data_type}数据已更新到GitHub: {full_path}")
+                return True
+            except Exception as e:
+                # 文件不存在，创建新文件
+                self.repo.create_file(
+                    full_path,
+                    f"创建{data_type}数据 - {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}",
+                    csv_data
+                )
+                st.success(f"{data_type}数据已创建到GitHub: {full_path}")
+                return True
+                
+        except Exception as e:
+            st.error(f"保存{data_type}数据到GitHub失败: {str(e)}")
+            return False
+    
+    def load_fixture_data(self, file_name: str):
+        """从GitHub加载fixture数据"""
+        try:
+            full_path = f"{self.base_path}/{file_name}"
+            contents = self.repo.get_contents(full_path)
+            csv_data = base64.b64decode(contents.content).decode('utf-8')
+            df = pd.read_csv(BytesIO(csv_data.encode('utf-8')))
+            
+            # 转换日期列
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'])
+            
+            return df
+        except Exception as e:
+            st.warning(f"从GitHub加载{file_name}失败: {str(e)}")
+            return None
+    
+    def file_exists(self, file_name: str):
+        """检查文件是否存在"""
+        try:
+            full_path = f"{self.base_path}/{file_name}"
+            self.repo.get_contents(full_path)
+            return True
+        except:
+            return False
+
+# 创建GitHub管理器
+github_manager = None
+if ENABLE_GITHUB_SAVE and GITHUB_TOKEN and REPO_NAME:
+    try:
+        github_manager = GitHubFixtureManager(REPO_NAME, GITHUB_TOKEN)
+        st.text("GitHub数据管理器已初始化")
+    except Exception as e:
+        st.error(f"初始化GitHub管理器失败: {e}")
+        github_manager = None
 
 #页面显示
 st.write('Loading Data...')
@@ -262,22 +371,21 @@ def process_tc_data(all_data, api_configs, days_back: int = 1):
     处理TIMECHARTER数据
     """
     data = all_data.get('timecharter')
+    
+    # 尝试从GitHub加载现有数据
+    spot_old = None
+    if github_manager and github_manager.file_exists('timecharter.csv'):
+        try:
+            spot_old = github_manager.load_fixture_data('timecharter.csv')
+            if spot_old is not None and not spot_old.empty:
+                spot_old.set_index('date', inplace=True)
+                st.text(f'从GitHub加载TIMECHARTER数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date()}')
+        except Exception as e:
+            st.warning(f"从GitHub加载TIMECHARTER数据失败: {e}")
+    
     if not data or 'fixtures' not in data or not data['fixtures']:
-        st.warning("未获取到TIMECHARTER数据，尝试加载本地数据")
-        file_path = 'timecharter.csv'
-        if os.path.exists(file_path):
-            try:
-                spot_old = pd.read_csv(file_path, parse_dates=['date'])
-                if not spot_old.empty:
-                    spot_old.set_index('date', inplace=True)
-                    return spot_old
-                else:
-                    st.warning("本地TIMECHARTER数据文件为空")
-                    return None
-            except Exception as e:
-                st.error(f"读取本地TIMECHARTER数据失败: {e}")
-                return None
-        return None
+        st.warning("未获取到TIMECHARTER API数据")
+        return spot_old if spot_old is not None and not spot_old.empty else None
     
     try:
         # 修复：处理fixtures可能为单个字典的情况
@@ -290,13 +398,13 @@ def process_tc_data(all_data, api_configs, days_back: int = 1):
         # 如果fixtures是空列表，直接返回None
         if not fixtures:
             st.warning("No fixtures data available in TIMECHARTER response")
-            return None
+            return spot_old if spot_old is not None and not spot_old.empty else None
             
         fixtures_df = pd.DataFrame(fixtures)  # 现在这里应该是安全的
         
         # 如果fixtures_df为空，直接返回None
         if fixtures_df.empty:
-            return None
+            return spot_old if spot_old is not None and not spot_old.empty else None
         
         # 使用配置中的列
         use_cols = [col for col in api_configs['timecharter']['use_cols'] if col in fixtures_df.columns]
@@ -312,63 +420,52 @@ def process_tc_data(all_data, api_configs, days_back: int = 1):
         # 添加 VESSEL TYPE 列
         spot_tcfix = add_vessel_type(spot_tcfix)
         
-        # 读取或创建旧数据文件，如果没有旧数据文件则创建
-        file_path = 'timecharter.csv'
-        if os.path.exists(file_path):
-            try:
-                spot_old = pd.read_csv(file_path, parse_dates=['date'])
-                if not spot_old.empty:
-                    spot_old.set_index('date', inplace=True)
-
-                    # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
-                    if 'VESSEL TYPE' not in spot_old.columns:
-                        spot_old = add_vessel_type(spot_old)
-
-                    st.text(f'TIMECHARTER Fixtures Data Before Update: {spot_old.index[-1].date()}')
-                    
-                    # 合并数据 - 只保留不在旧数据中的新数据
-                    # 假设新数据的日期都在旧数据最新日期之后
-                    last_date = spot_old.index.max()
-                    new_data = spot_tcfix[spot_tcfix.index > last_date]
-                    
-                    if not new_data.empty:
-                        spot = pd.concat([spot_old, new_data])
-                    else:
-                        spot = spot_old
-                        st.info("TIMECHARTER: No new data to add.")
-                else:
-                    # 旧数据文件为空，直接使用新数据
-                    st.warning("TIMECHARTER 本地数据文件为空，使用新数据")
-                    spot = spot_tcfix
-            except Exception as e:
-                st.error(f"读取TIMECHARTER本地数据失败: {e}")
-                spot = spot_tcfix
+        # 合并数据
+        if spot_old is not None and not spot_old.empty:
+            st.text(f'TIMECHARTER GitHub数据更新前: {spot_old.index[-1].date()}')
+            
+            # 合并数据 - 只保留不在旧数据中的新数据
+            last_date = spot_old.index.max()
+            new_data = spot_tcfix[spot_tcfix.index > last_date]
+            
+            if not new_data.empty:
+                spot = pd.concat([spot_old, new_data])
+                st.text(f'添加 {len(new_data)} 条新TIMECHARTER记录')
+            else:
+                spot = spot_old
+                st.info("TIMECHARTER: 没有新数据需要添加")
         else:
             spot = spot_tcfix
-            st.text("Creating new TIMECHARTER data file.")
+            st.text("创建新的TIMECHARTER数据集")
         
         # 去重
-        if not spot.empty:
+        if spot is not None and not spot.empty:
             spot = spot.reset_index()
             spot = spot.drop_duplicates(subset=['date', 'shipName'], keep='last')
             spot.set_index('date', inplace=True)
             spot.sort_index(inplace=True)
             
-            st.text(f'TIMECHARTER Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
-            st.text(f'Total records: {len(spot)}')
+            st.text(f'TIMECHARTER 数据更新后: {spot.index[-1].date() if not spot.empty else "N/A"}')
+            st.text(f'总记录数: {len(spot)}')
             
-            # 保存
-            spot.to_csv(file_path, index_label='date')
+            # 保存到GitHub
+            if github_manager:
+                success = github_manager.save_fixture_data(spot.reset_index(), 'timecharter.csv', 'TIMECHARTER')
+                if not success:
+                    st.error("TIMECHARTER数据保存到GitHub失败")
+            else:
+                st.warning("GitHub管理器未初始化，数据未保存")
         else:
-            st.warning("TIMECHARTER: 处理后的数据为空，不保存")
+            st.warning("TIMECHARTER: 处理后的数据为空")
+            spot = None
         
-        return spot if not spot.empty else None
+        return spot
     
     except Exception as e:
         st.error(f"处理TIMECHARTER数据时出错: {e}")
         import traceback
         st.error(traceback.format_exc())
-        return None
+        return spot_old if spot_old is not None and not spot_old.empty else None
 
 # ==================== PERIOD类型正则补全使用 ====================
 PERIOD_RE_MAPS={
@@ -389,22 +486,21 @@ def process_period_data(all_data, api_configs, days_back: int = 1):
     处理PERIOD数据
     """
     data = all_data.get('periodcharter')
+    
+    # 尝试从GitHub加载现有数据
+    spot_old = None
+    if github_manager and github_manager.file_exists('periodcharter.csv'):
+        try:
+            spot_old = github_manager.load_fixture_data('periodcharter.csv')
+            if spot_old is not None and not spot_old.empty:
+                spot_old.set_index('date', inplace=True)
+                st.text(f'从GitHub加载PERIOD数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date()}')
+        except Exception as e:
+            st.warning(f"从GitHub加载PERIOD数据失败: {e}")
+    
     if not data or 'fixtures' not in data or not data['fixtures']:
-        st.warning("未获取到PERIOD数据，尝试加载本地数据")
-        file_path = 'periodcharter.csv'
-        if os.path.exists(file_path):
-            try:
-                spot_old = pd.read_csv(file_path, parse_dates=['date'])
-                if not spot_old.empty:
-                    spot_old.set_index('date', inplace=True)
-                    return spot_old
-                else:
-                    st.warning("本地PERIOD数据文件为空")
-                    return None
-            except Exception as e:
-                st.error(f"读取本地PERIOD数据失败: {e}")
-                return None
-        return None
+        st.warning("未获取到PERIOD API数据")
+        return spot_old if spot_old is not None and not spot_old.empty else None
     
     try:
         # 修复：处理fixtures可能为单个字典的情况
@@ -417,13 +513,13 @@ def process_period_data(all_data, api_configs, days_back: int = 1):
         # 如果fixtures是空列表，直接返回None
         if not fixtures:
             st.warning("No fixtures data available in PERIOD response")
-            return None
+            return spot_old if spot_old is not None and not spot_old.empty else None
             
         fixtures_df = pd.DataFrame(fixtures)  # 现在这里应该是安全的
         
         # 如果fixtures_df为空，直接返回None
         if fixtures_df.empty:
-            return None
+            return spot_old if spot_old is not None and not spot_old.empty else None
         
         # 使用配置中的列
         use_cols = [col for col in api_configs['periodcharter']['use_cols'] if col in fixtures_df.columns]
@@ -438,47 +534,23 @@ def process_period_data(all_data, api_configs, days_back: int = 1):
         # 添加 VESSEL TYPE 列
         spot_periodfix = add_vessel_type(spot_periodfix)
         
-        # 读取或创建旧数据文件，如果没有旧数据文件则创建
-        file_path = 'periodcharter.csv'
-        if os.path.exists(file_path):
-            try:
-                spot_old = pd.read_csv(file_path, parse_dates=['date'])
-                if not spot_old.empty:
-                    spot_old.set_index('date', inplace=True)
-                    # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
-                    if 'VESSEL TYPE' not in spot_old.columns:
-                        spot_old = add_vessel_type(spot_old)
-                    
-                    if not spot_old.empty:
-                        st.text(f'PERIOD Fixtures Data Before Update: {spot_old.index[-1].date()}')
-                    
-                    # 合并数据 - 只保留不在旧数据中的新数据
-                    # 假设新数据的日期都在旧数据最新日期之后
-                    last_date = spot_old.index.max() if not spot_old.empty else None
-                    
-                    if last_date is not None:
-                        new_data = spot_periodfix[spot_periodfix.index > last_date]
-                    else:
-                        new_data = spot_periodfix
-                    
-                    if not new_data.empty:
-                        if not spot_old.empty:
-                            spot = pd.concat([spot_old, new_data])
-                        else:
-                            spot = new_data
-                    else:
-                        spot = spot_old if not spot_old.empty else None
-                        st.info("PERIOD: No new data to add.")
-                else:
-                    # 旧数据文件为空，直接使用新数据
-                    st.warning("PERIOD 本地数据文件为空，使用新数据")
-                    spot = spot_periodfix
-            except Exception as e:
-                st.error(f"读取PERIOD本地数据失败: {e}")
-                spot = spot_periodfix
+        # 合并数据
+        if spot_old is not None and not spot_old.empty:
+            st.text(f'PERIOD GitHub数据更新前: {spot_old.index[-1].date()}')
+            
+            # 合并数据 - 只保留不在旧数据中的新数据
+            last_date = spot_old.index.max()
+            new_data = spot_periodfix[spot_periodfix.index > last_date]
+            
+            if not new_data.empty:
+                spot = pd.concat([spot_old, new_data])
+                st.text(f'添加 {len(new_data)} 条新PERIOD记录')
+            else:
+                spot = spot_old
+                st.info("PERIOD: 没有新数据需要添加")
         else:
             spot = spot_periodfix
-            st.text("Creating new PERIOD data file.")
+            st.text("创建新的PERIOD数据集")
         
         # 去重
         if spot is not None and not spot.empty:
@@ -487,13 +559,18 @@ def process_period_data(all_data, api_configs, days_back: int = 1):
             spot.set_index('date', inplace=True)
             spot.sort_index(inplace=True)
             
-            st.text(f'PERIOD Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
-            st.text(f'Total records: {len(spot)}')
+            st.text(f'PERIOD 数据更新后: {spot.index[-1].date() if not spot.empty else "N/A"}')
+            st.text(f'总记录数: {len(spot)}')
             
-            # 保存
-            spot.to_csv(file_path, index_label='date')
+            # 保存到GitHub
+            if github_manager:
+                success = github_manager.save_fixture_data(spot.reset_index(), 'periodcharter.csv', 'PERIOD')
+                if not success:
+                    st.error("PERIOD数据保存到GitHub失败")
+            else:
+                st.warning("GitHub管理器未初始化，数据未保存")
         else:
-            st.warning("PERIOD: 处理后的数据为空，不保存")
+            st.warning("PERIOD: 处理后的数据为空")
             spot = None
         
         return spot
@@ -502,7 +579,7 @@ def process_period_data(all_data, api_configs, days_back: int = 1):
         st.error(f"处理PERIOD数据时出错: {e}")
         import traceback
         st.error(traceback.format_exc())
-        return None
+        return spot_old if spot_old is not None and not spot_old.empty else None
 
 # ==================== VOYAGE类型正则补全使用 ====================
 VC_RE_MAPS={
@@ -521,22 +598,21 @@ def process_voyage_grain_data(all_data, api_configs, days_back: int = 1):
     处理VOYAGE(GRAIN)数据
     """
     data = all_data.get('voyage_grain')
+    
+    # 尝试从GitHub加载现有数据
+    spot_old = None
+    if github_manager and github_manager.file_exists('voyage_grain.csv'):
+        try:
+            spot_old = github_manager.load_fixture_data('voyage_grain.csv')
+            if spot_old is not None and not spot_old.empty:
+                spot_old.set_index('date', inplace=True)
+                st.text(f'从GitHub加载VOYAGE(GRAIN)数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date()}')
+        except Exception as e:
+            st.warning(f"从GitHub加载VOYAGE(GRAIN)数据失败: {e}")
+    
     if not data or 'fixtures' not in data or not data['fixtures']:
-        st.warning("未获取到VOYAGE(GRAIN)数据，尝试加载本地数据")
-        file_path = 'vcgrain.csv'
-        if os.path.exists(file_path):
-            try:
-                spot_old = pd.read_csv(file_path, parse_dates=['date'])
-                if not spot_old.empty:
-                    spot_old.set_index('date', inplace=True)
-                    return spot_old
-                else:
-                    st.warning("本地VOYAGE(GRAIN)数据文件为空")
-                    return None
-            except Exception as e:
-                st.error(f"读取本地VOYAGE(GRAIN)数据失败: {e}")
-                return None
-        return None
+        st.warning("未获取到VOYAGE(GRAIN) API数据")
+        return spot_old if spot_old is not None and not spot_old.empty else None
     
     try:
         # 修复：处理fixtures可能为单个字典的情况
@@ -549,13 +625,13 @@ def process_voyage_grain_data(all_data, api_configs, days_back: int = 1):
         # 如果fixtures是空列表，直接返回None
         if not fixtures:
             st.warning("No fixtures data available in VOYAGE(GRAIN) response")
-            return None
+            return spot_old if spot_old is not None and not spot_old.empty else None
             
         fixtures_df = pd.DataFrame(fixtures)  # 现在这里应该是安全的
         
         # 如果fixtures_df为空，直接返回None
         if fixtures_df.empty:
-            return None
+            return spot_old if spot_old is not None and not spot_old.empty else None
         
         # 使用配置中的列
         use_cols = [col for col in api_configs['voyage_grain']['use_cols'] if col in fixtures_df.columns]
@@ -570,47 +646,23 @@ def process_voyage_grain_data(all_data, api_configs, days_back: int = 1):
         # 添加 VESSEL TYPE 列
         spot_vcgrfix = add_vessel_type(spot_vcgrfix)
         
-        # 读取或创建旧数据文件，如果没有旧数据文件则创建
-        file_path = 'vcgrain.csv'
-        if os.path.exists(file_path):
-            try:
-                spot_old = pd.read_csv(file_path, parse_dates=['date'])
-                if not spot_old.empty:
-                    spot_old.set_index('date', inplace=True)
-                    # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
-                    if 'VESSEL TYPE' not in spot_old.columns:
-                        spot_old = add_vessel_type(spot_old)
-                    
-                    if not spot_old.empty:
-                        st.text(f'VOYAGE(GRAIN) Fixtures Data Before Update: {spot_old.index[-1].date()}')
-                    
-                    # 合并数据 - 只保留不在旧数据中的新数据
-                    # 假设新数据的日期都在旧数据最新日期之后
-                    last_date = spot_old.index.max() if not spot_old.empty else None
-                    
-                    if last_date is not None:
-                        new_data = spot_vcgrfix[spot_vcgrfix.index > last_date]
-                    else:
-                        new_data = spot_vcgrfix
-                    
-                    if not new_data.empty:
-                        if not spot_old.empty:
-                            spot = pd.concat([spot_old, new_data])
-                        else:
-                            spot = new_data
-                    else:
-                        spot = spot_old if not spot_old.empty else None
-                        st.info("VOYAGE(GRAIN): No new data to add.")
-                else:
-                    # 旧数据文件为空，直接使用新数据
-                    st.warning("VOYAGE(GRAIN) 本地数据文件为空，使用新数据")
-                    spot = spot_vcgrfix
-            except Exception as e:
-                st.error(f"读取VOYAGE(GRAIN)本地数据失败: {e}")
-                spot = spot_vcgrfix
+        # 合并数据
+        if spot_old is not None and not spot_old.empty:
+            st.text(f'VOYAGE(GRAIN) GitHub数据更新前: {spot_old.index[-1].date()}')
+            
+            # 合并数据 - 只保留不在旧数据中的新数据
+            last_date = spot_old.index.max()
+            new_data = spot_vcgrfix[spot_vcgrfix.index > last_date]
+            
+            if not new_data.empty:
+                spot = pd.concat([spot_old, new_data])
+                st.text(f'添加 {len(new_data)} 条新VOYAGE(GRAIN)记录')
+            else:
+                spot = spot_old
+                st.info("VOYAGE(GRAIN): 没有新数据需要添加")
         else:
             spot = spot_vcgrfix
-            st.text("Creating new VOYAGE(GRAIN) data file.")
+            st.text("创建新的VOYAGE(GRAIN)数据集")
         
         # 去重
         if spot is not None and not spot.empty:
@@ -619,13 +671,18 @@ def process_voyage_grain_data(all_data, api_configs, days_back: int = 1):
             spot.set_index('date', inplace=True)
             spot.sort_index(inplace=True)
             
-            st.text(f'VOYAGE(GRAIN) Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
-            st.text(f'Total records: {len(spot)}')
+            st.text(f'VOYAGE(GRAIN) 数据更新后: {spot.index[-1].date() if not spot.empty else "N/A"}')
+            st.text(f'总记录数: {len(spot)}')
             
-            # 保存
-            spot.to_csv(file_path, index_label='date')
+            # 保存到GitHub
+            if github_manager:
+                success = github_manager.save_fixture_data(spot.reset_index(), 'voyage_grain.csv', 'VOYAGE(GRAIN)')
+                if not success:
+                    st.error("VOYAGE(GRAIN)数据保存到GitHub失败")
+            else:
+                st.warning("GitHub管理器未初始化，数据未保存")
         else:
-            st.warning("VOYAGE(GRAIN): 处理后的数据为空，不保存")
+            st.warning("VOYAGE(GRAIN): 处理后的数据为空")
             spot = None
         
         return spot
@@ -634,7 +691,7 @@ def process_voyage_grain_data(all_data, api_configs, days_back: int = 1):
         st.error(f"处理VOYAGE(GRAIN)数据时出错: {e}")
         import traceback
         st.error(traceback.format_exc())
-        return None
+        return spot_old if spot_old is not None and not spot_old.empty else None
 
 @st.cache_data()
 def process_voyage_coal_data(all_data, api_configs, days_back: int = 1):
@@ -642,22 +699,21 @@ def process_voyage_coal_data(all_data, api_configs, days_back: int = 1):
     处理VOYAGE(COAL)数据
     """
     data = all_data.get('voyage_coal')
+    
+    # 尝试从GitHub加载现有数据
+    spot_old = None
+    if github_manager and github_manager.file_exists('voyage_coal.csv'):
+        try:
+            spot_old = github_manager.load_fixture_data('voyage_coal.csv')
+            if spot_old is not None and not spot_old.empty:
+                spot_old.set_index('date', inplace=True)
+                st.text(f'从GitHub加载VOYAGE(COAL)数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date()}')
+        except Exception as e:
+            st.warning(f"从GitHub加载VOYAGE(COAL)数据失败: {e}")
+    
     if not data or 'fixtures' not in data or not data['fixtures']:
-        st.warning("未获取到VOYAGE(COAL)数据，尝试加载本地数据")
-        file_path = 'vccoal.csv'
-        if os.path.exists(file_path):
-            try:
-                spot_old = pd.read_csv(file_path, parse_dates=['date'])
-                if not spot_old.empty:
-                    spot_old.set_index('date', inplace=True)
-                    return spot_old
-                else:
-                    st.warning("本地VOYAGE(COAL)数据文件为空")
-                    return None
-            except Exception as e:
-                st.error(f"读取本地VOYAGE(COAL)数据失败: {e}")
-                return None
-        return None
+        st.warning("未获取到VOYAGE(COAL) API数据")
+        return spot_old if spot_old is not None and not spot_old.empty else None
     
     try:
         # 修复：处理fixtures可能为单个字典的情况
@@ -670,13 +726,13 @@ def process_voyage_coal_data(all_data, api_configs, days_back: int = 1):
         # 如果fixtures是空列表，直接返回None
         if not fixtures:
             st.warning("No fixtures data available in VOYAGE(COAL) response")
-            return None
+            return spot_old if spot_old is not None and not spot_old.empty else None
             
         fixtures_df = pd.DataFrame(fixtures)  # 现在这里应该是安全的
         
         # 如果fixtures_df为空，直接返回None
         if fixtures_df.empty:
-            return None
+            return spot_old if spot_old is not None and not spot_old.empty else None
         
         # 使用配置中的列
         use_cols = [col for col in api_configs['voyage_coal']['use_cols'] if col in fixtures_df.columns]
@@ -691,47 +747,23 @@ def process_voyage_coal_data(all_data, api_configs, days_back: int = 1):
         # 添加 VESSEL TYPE 列
         spot_vccofix = add_vessel_type(spot_vccofix)
         
-        # 读取或创建旧数据文件，如果没有旧数据文件则创建
-        file_path = 'vccoal.csv'
-        if os.path.exists(file_path):
-            try:
-                spot_old = pd.read_csv(file_path, parse_dates=['date'])
-                if not spot_old.empty:
-                    spot_old.set_index('date', inplace=True)
-                    # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
-                    if 'VESSEL TYPE' not in spot_old.columns:
-                        spot_old = add_vessel_type(spot_old)
-                    
-                    if not spot_old.empty:
-                        st.text(f'VOYAGE(COAL) Fixtures Data Before Update: {spot_old.index[-1].date()}')
-                    
-                    # 合并数据 - 只保留不在旧数据中的新数据
-                    # 假设新数据的日期都在旧数据最新日期之后
-                    last_date = spot_old.index.max() if not spot_old.empty else None
-                    
-                    if last_date is not None:
-                        new_data = spot_vccofix[spot_vccofix.index > last_date]
-                    else:
-                        new_data = spot_vccofix
-                    
-                    if not new_data.empty:
-                        if not spot_old.empty:
-                            spot = pd.concat([spot_old, new_data])
-                        else:
-                            spot = new_data
-                    else:
-                        spot = spot_old if not spot_old.empty else None
-                        st.info("VOYAGE(COAL): No new data to add.")
-                else:
-                    # 旧数据文件为空，直接使用新数据
-                    st.warning("VOYAGE(COAL) 本地数据文件为空，使用新数据")
-                    spot = spot_vccofix
-            except Exception as e:
-                st.error(f"读取VOYAGE(COAL)本地数据失败: {e}")
-                spot = spot_vccofix
+        # 合并数据
+        if spot_old is not None and not spot_old.empty:
+            st.text(f'VOYAGE(COAL) GitHub数据更新前: {spot_old.index[-1].date()}')
+            
+            # 合并数据 - 只保留不在旧数据中的新数据
+            last_date = spot_old.index.max()
+            new_data = spot_vccofix[spot_vccofix.index > last_date]
+            
+            if not new_data.empty:
+                spot = pd.concat([spot_old, new_data])
+                st.text(f'添加 {len(new_data)} 条新VOYAGE(COAL)记录')
+            else:
+                spot = spot_old
+                st.info("VOYAGE(COAL): 没有新数据需要添加")
         else:
             spot = spot_vccofix
-            st.text("Creating new VOYAGE(COAL) data file.")
+            st.text("创建新的VOYAGE(COAL)数据集")
         
         # 去重
         if spot is not None and not spot.empty:
@@ -740,13 +772,18 @@ def process_voyage_coal_data(all_data, api_configs, days_back: int = 1):
             spot.set_index('date', inplace=True)
             spot.sort_index(inplace=True)
             
-            st.text(f'VOYAGE(COAL) Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
-            st.text(f'Total records: {len(spot)}')
+            st.text(f'VOYAGE(COAL) 数据更新后: {spot.index[-1].date() if not spot.empty else "N/A"}')
+            st.text(f'总记录数: {len(spot)}')
             
-            # 保存
-            spot.to_csv(file_path, index_label='date')
+            # 保存到GitHub
+            if github_manager:
+                success = github_manager.save_fixture_data(spot.reset_index(), 'voyage_coal.csv', 'VOYAGE(COAL)')
+                if not success:
+                    st.error("VOYAGE(COAL)数据保存到GitHub失败")
+            else:
+                st.warning("GitHub管理器未初始化，数据未保存")
         else:
-            st.warning("VOYAGE(COAL): 处理后的数据为空，不保存")
+            st.warning("VOYAGE(COAL): 处理后的数据为空")
             spot = None
         
         return spot
@@ -755,7 +792,7 @@ def process_voyage_coal_data(all_data, api_configs, days_back: int = 1):
         st.error(f"处理VOYAGE(COAL)数据时出错: {e}")
         import traceback
         st.error(traceback.format_exc())
-        return None
+        return spot_old if spot_old is not None and not spot_old.empty else None
 
 @st.cache_data()
 def process_voyage_misc_data(all_data, api_configs, days_back: int = 1):
@@ -763,22 +800,21 @@ def process_voyage_misc_data(all_data, api_configs, days_back: int = 1):
     处理VOYAGE(MISC)数据
     """
     data = all_data.get('voyage_misc')
+    
+    # 尝试从GitHub加载现有数据
+    spot_old = None
+    if github_manager and github_manager.file_exists('voyage_misc.csv'):
+        try:
+            spot_old = github_manager.load_fixture_data('voyage_misc.csv')
+            if spot_old is not None and not spot_old.empty:
+                spot_old.set_index('date', inplace=True)
+                st.text(f'从GitHub加载VOYAGE(MISC)数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date()}')
+        except Exception as e:
+            st.warning(f"从GitHub加载VOYAGE(MISC)数据失败: {e}")
+    
     if not data or 'fixtures' not in data or not data['fixtures']:
-        st.warning("未获取到VOYAGE(MISC)数据，尝试加载本地数据")
-        file_path = 'vcmisc.csv'
-        if os.path.exists(file_path):
-            try:
-                spot_old = pd.read_csv(file_path, parse_dates=['date'])
-                if not spot_old.empty:
-                    spot_old.set_index('date', inplace=True)
-                    return spot_old
-                else:
-                    st.warning("本地VOYAGE(MISC)数据文件为空")
-                    return None
-            except Exception as e:
-                st.error(f"读取本地VOYAGE(MISC)数据失败: {e}")
-                return None
-        return None
+        st.warning("未获取到VOYAGE(MISC) API数据")
+        return spot_old if spot_old is not None and not spot_old.empty else None
     
     try:
         # 修复：处理fixtures可能为单个字典的情况
@@ -791,13 +827,13 @@ def process_voyage_misc_data(all_data, api_configs, days_back: int = 1):
         # 如果fixtures是空列表，直接返回None
         if not fixtures:
             st.warning("No fixtures data available in VOYAGE(MISC) response")
-            return None
+            return spot_old if spot_old is not None and not spot_old.empty else None
             
         fixtures_df = pd.DataFrame(fixtures)  # 现在这里应该是安全的
         
         # 如果fixtures_df为空，直接返回None
         if fixtures_df.empty:
-            return None
+            return spot_old if spot_old is not None and not spot_old.empty else None
         
         # 使用配置中的列
         use_cols = [col for col in api_configs['voyage_misc']['use_cols'] if col in fixtures_df.columns]
@@ -811,47 +847,24 @@ def process_voyage_misc_data(all_data, api_configs, days_back: int = 1):
         spot_vcmifix.set_index('date', inplace=True)
          # 添加 VESSEL TYPE 列
         spot_vcmifix = add_vessel_type(spot_vcmifix)       
-        # 读取或创建旧数据文件，如果没有旧数据文件则创建
-        file_path = 'vcmisc.csv'
-        if os.path.exists(file_path):
-            try:
-                spot_old = pd.read_csv(file_path, parse_dates=['date'])
-                if not spot_old.empty:
-                    spot_old.set_index('date', inplace=True)
-                    # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
-                    if 'VESSEL TYPE' not in spot_old.columns:
-                        spot_old = add_vessel_type(spot_old)
-                    
-                    if not spot_old.empty:
-                        st.text(f'VOYAGE(MISC) Fixtures Data Before Update: {spot_old.index[-1].date()}')
-                    
-                    # 合并数据 - 只保留不在旧数据中的新数据
-                    # 假设新数据的日期都在旧数据最新日期之后
-                    last_date = spot_old.index.max() if not spot_old.empty else None
-                    
-                    if last_date is not None:
-                        new_data = spot_vcmifix[spot_vcmifix.index > last_date]
-                    else:
-                        new_data = spot_vcmifix
-                    
-                    if not new_data.empty:
-                        if not spot_old.empty:
-                            spot = pd.concat([spot_old, new_data])
-                        else:
-                            spot = new_data
-                    else:
-                        spot = spot_old if not spot_old.empty else None
-                        st.info("VOYAGE(MISC): No new data to add.")
-                else:
-                    # 旧数据文件为空，直接使用新数据
-                    st.warning("VOYAGE(MISC) 本地数据文件为空，使用新数据")
-                    spot = spot_vcmifix
-            except Exception as e:
-                st.error(f"读取VOYAGE(MISC)本地数据失败: {e}")
-                spot = spot_vcmifix
+        
+        # 合并数据
+        if spot_old is not None and not spot_old.empty:
+            st.text(f'VOYAGE(MISC) GitHub数据更新前: {spot_old.index[-1].date()}')
+            
+            # 合并数据 - 只保留不在旧数据中的新数据
+            last_date = spot_old.index.max()
+            new_data = spot_vcmifix[spot_vcmifix.index > last_date]
+            
+            if not new_data.empty:
+                spot = pd.concat([spot_old, new_data])
+                st.text(f'添加 {len(new_data)} 条新VOYAGE(MISC)记录')
+            else:
+                spot = spot_old
+                st.info("VOYAGE(MISC): 没有新数据需要添加")
         else:
             spot = spot_vcmifix
-            st.text("Creating new VOYAGE(MISC) data file.")
+            st.text("创建新的VOYAGE(MISC)数据集")
         
         # 去重
         if spot is not None and not spot.empty:
@@ -860,13 +873,18 @@ def process_voyage_misc_data(all_data, api_configs, days_back: int = 1):
             spot.set_index('date', inplace=True)
             spot.sort_index(inplace=True)
             
-            st.text(f'VOYAGE(MISC) Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
-            st.text(f'Total records: {len(spot)}')
+            st.text(f'VOYAGE(MISC) 数据更新后: {spot.index[-1].date() if not spot.empty else "N/A"}')
+            st.text(f'总记录数: {len(spot)}')
             
-            # 保存
-            spot.to_csv(file_path, index_label='date')
+            # 保存到GitHub
+            if github_manager:
+                success = github_manager.save_fixture_data(spot.reset_index(), 'voyage_misc.csv', 'VOYAGE(MISC)')
+                if not success:
+                    st.error("VOYAGE(MISC)数据保存到GitHub失败")
+            else:
+                st.warning("GitHub管理器未初始化，数据未保存")
         else:
-            st.warning("VOYAGE(MISC): 处理后的数据为空，不保存")
+            st.warning("VOYAGE(MISC): 处理后的数据为空")
             spot = None
         
         return spot
@@ -875,7 +893,7 @@ def process_voyage_misc_data(all_data, api_configs, days_back: int = 1):
         st.error(f"处理VOYAGE(MISC)数据时出错: {e}")
         import traceback
         st.error(traceback.format_exc())
-        return None
+        return spot_old if spot_old is not None and not spot_old.empty else None
 
 @st.cache_data()
 def process_voyage_ore_data(all_data, api_configs, days_back: int = 1):
@@ -883,22 +901,21 @@ def process_voyage_ore_data(all_data, api_configs, days_back: int = 1):
     处理VOYAGE(ORE)数据
     """
     data = all_data.get('voyage_ore')
+    
+    # 尝试从GitHub加载现有数据
+    spot_old = None
+    if github_manager and github_manager.file_exists('voyage_ore.csv'):
+        try:
+            spot_old = github_manager.load_fixture_data('voyage_ore.csv')
+            if spot_old is not None and not spot_old.empty:
+                spot_old.set_index('date', inplace=True)
+                st.text(f'从GitHub加载VOYAGE(ORE)数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date()}')
+        except Exception as e:
+            st.warning(f"从GitHub加载VOYAGE(ORE)数据失败: {e}")
+    
     if not data or 'fixtures' not in data or not data['fixtures']:
-        st.warning("未获取到VOYAGE(ORE)数据，尝试加载本地数据")
-        file_path = 'vcore.csv'
-        if os.path.exists(file_path):
-            try:
-                spot_old = pd.read_csv(file_path, parse_dates=['date'])
-                if not spot_old.empty:
-                    spot_old.set_index('date', inplace=True)
-                    return spot_old
-                else:
-                    st.warning("本地VOYAGE(ORE)数据文件为空")
-                    return None
-            except Exception as e:
-                st.error(f"读取本地VOYAGE(ORE)数据失败: {e}")
-                return None
-        return None
+        st.warning("未获取到VOYAGE(ORE) API数据")
+        return spot_old if spot_old is not None and not spot_old.empty else None
     
     try:
         # 修复：处理fixtures可能为单个字典的情况
@@ -911,13 +928,13 @@ def process_voyage_ore_data(all_data, api_configs, days_back: int = 1):
         # 如果fixtures是空列表，直接返回None
         if not fixtures:
             st.warning("No fixtures data available in VOYAGE(ORE) response")
-            return None
+            return spot_old if spot_old is not None and not spot_old.empty else None
             
         fixtures_df = pd.DataFrame(fixtures)  # 现在这里应该是安全的
         
         # 如果fixtures_df为空，直接返回None
         if fixtures_df.empty:
-            return None
+            return spot_old if spot_old is not None and not spot_old.empty else None
         
         # 使用配置中的列
         use_cols = [col for col in api_configs['voyage_ore']['use_cols'] if col in fixtures_df.columns]
@@ -931,47 +948,24 @@ def process_voyage_ore_data(all_data, api_configs, days_back: int = 1):
         spot_vcorfix.set_index('date', inplace=True)
          # 添加 VESSEL TYPE 列
         spot_vcorfix = add_vessel_type(spot_vcorfix)       
-        # 读取或创建旧数据文件，如果没有旧数据文件则创建
-        file_path = 'vcore.csv'
-        if os.path.exists(file_path):
-            try:
-                spot_old = pd.read_csv(file_path, parse_dates=['date'])
-                if not spot_old.empty:
-                    spot_old.set_index('date', inplace=True)
-                    # 确保旧数据也有 VESSEL TYPE 列（如果是从旧版本升级）
-                    if 'VESSEL TYPE' not in spot_old.columns:
-                        spot_old = add_vessel_type(spot_old)
-                    
-                    if not spot_old.empty:
-                        st.text(f'VOYAGE(ORE) Fixtures Data Before Update: {spot_old.index[-1].date()}')
-                    
-                    # 合并数据 - 只保留不在旧数据中的新数据
-                    # 假设新数据的日期都在旧数据最新日期之后
-                    last_date = spot_old.index.max() if not spot_old.empty else None
-                    
-                    if last_date is not None:
-                        new_data = spot_vcorfix[spot_vcorfix.index > last_date]
-                    else:
-                        new_data = spot_vcorfix
-                    
-                    if not new_data.empty:
-                        if not spot_old.empty:
-                            spot = pd.concat([spot_old, new_data])
-                        else:
-                            spot = new_data
-                    else:
-                        spot = spot_old if not spot_old.empty else None
-                        st.info("VOYAGE(ORE): No new data to add.")
-                else:
-                    # 旧数据文件为空，直接使用新数据
-                    st.warning("VOYAGE(ORE) 本地数据文件为空，使用新数据")
-                    spot = spot_vcorfix
-            except Exception as e:
-                st.error(f"读取VOYAGE(ORE)本地数据失败: {e}")
-                spot = spot_vcorfix
+        
+        # 合并数据
+        if spot_old is not None and not spot_old.empty:
+            st.text(f'VOYAGE(ORE) GitHub数据更新前: {spot_old.index[-1].date()}')
+            
+            # 合并数据 - 只保留不在旧数据中的新数据
+            last_date = spot_old.index.max()
+            new_data = spot_vcorfix[spot_vcorfix.index > last_date]
+            
+            if not new_data.empty:
+                spot = pd.concat([spot_old, new_data])
+                st.text(f'添加 {len(new_data)} 条新VOYAGE(ORE)记录')
+            else:
+                spot = spot_old
+                st.info("VOYAGE(ORE): 没有新数据需要添加")
         else:
             spot = spot_vcorfix
-            st.text("Creating new VOYAGE(ORE) data file.")
+            st.text("创建新的VOYAGE(ORE)数据集")
         
         # 去重
         if spot is not None and not spot.empty:
@@ -980,13 +974,18 @@ def process_voyage_ore_data(all_data, api_configs, days_back: int = 1):
             spot.set_index('date', inplace=True)
             spot.sort_index(inplace=True)
             
-            st.text(f'VOYAGE(ORE) Fixtures Data After Update: {spot.index[-1].date() if not spot.empty else "N/A"}')
-            st.text(f'Total records: {len(spot)}')
+            st.text(f'VOYAGE(ORE) 数据更新后: {spot.index[-1].date() if not spot.empty else "N/A"}')
+            st.text(f'总记录数: {len(spot)}')
             
-            # 保存
-            spot.to_csv(file_path, index_label='date')
+            # 保存到GitHub
+            if github_manager:
+                success = github_manager.save_fixture_data(spot.reset_index(), 'voyage_ore.csv', 'VOYAGE(ORE)')
+                if not success:
+                    st.error("VOYAGE(ORE)数据保存到GitHub失败")
+            else:
+                st.warning("GitHub管理器未初始化，数据未保存")
         else:
-            st.warning("VOYAGE(ORE): 处理后的数据为空，不保存")
+            st.warning("VOYAGE(ORE): 处理后的数据为空")
             spot = None
         
         return spot
@@ -995,7 +994,7 @@ def process_voyage_ore_data(all_data, api_configs, days_back: int = 1):
         st.error(f"处理VOYAGE(ORE)数据时出错: {e}")
         import traceback
         st.error(traceback.format_exc())
-        return None
+        return spot_old if spot_old is not None and not spot_old.empty else None
 
 # ==================== 数据加载主函数 ====================
 
@@ -1007,6 +1006,46 @@ def update_data():
     st.session_state['force_15_days'] = True #如果用户点过更新函数，那么session里会存在force_15_days的key
     # 得到true之后需要重新运行脚本，才能使用
     st.rerun() #拿到true之后立即重新运行脚本
+
+def sync_all_to_github():
+    """将所有数据同步到GitHub"""
+    if not github_manager:
+        st.error("GitHub管理器未初始化，无法同步")
+        return
+    
+    # 从session_state获取所有数据
+    fixtures_to_sync = {}
+    
+    if 'tc_spot' in st.session_state and st.session_state['tc_spot'] is not None:
+        fixtures_to_sync['timecharter'] = st.session_state['tc_spot']
+    
+    if 'period_spot' in st.session_state and st.session_state['period_spot'] is not None:
+        fixtures_to_sync['periodcharter'] = st.session_state['period_spot']
+    
+    if 'vcgr_spot' in st.session_state and st.session_state['vcgr_spot'] is not None:
+        fixtures_to_sync['voyage_grain'] = st.session_state['vcgr_spot']
+    
+    if 'vcco_spot' in st.session_state and st.session_state['vcco_spot'] is not None:
+        fixtures_to_sync['voyage_coal'] = st.session_state['vcco_spot']
+    
+    if 'vcmi_spot' in st.session_state and st.session_state['vcmi_spot'] is not None:
+        fixtures_to_sync['voyage_misc'] = st.session_state['vcmi_spot']
+    
+    if 'vcor_spot' in st.session_state and st.session_state['vcor_spot'] is not None:
+        fixtures_to_sync['voyage_ore'] = st.session_state['vcor_spot']
+    
+    success_count = 0
+    for name, df in fixtures_to_sync.items():
+        if df is not None and not df.empty:
+            file_name = f'{name}.csv'
+            success = github_manager.save_fixture_data(df.reset_index(), file_name, name.upper())
+            if success:
+                success_count += 1
+    
+    if success_count > 0:
+        st.success(f"成功同步 {success_count} 个数据集到GitHub")
+    else:
+        st.warning("没有数据需要同步")
 
 #如果session里会存在force_15_days的key，那么days_back就设置为15，用pop是用一次之后就删掉
 days_back = 3 if st.session_state.pop('force_15_days', None) else 1 
@@ -1075,6 +1114,13 @@ elif vcor_spot is None:
 st.text('Fixture Data Done')
 st.write('All Data Loaded!!')
 
-st.button('Update Data',on_click=update_data) #按钮链接更新函数
+# 添加按钮
+col1, col2 = st.columns(2)
+with col1:
+    st.button('Update Data', on_click=update_data)
+with col2:
+    if github_manager:
+        st.button('Sync All to GitHub', on_click=sync_all_to_github)
+
 st.text('Data will be updated when streamlit is opened')
 st.text('If you would like to trigger the reload right now, please click on the above "Update Data" button.')
