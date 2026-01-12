@@ -136,13 +136,13 @@ def add_vessel_type(df):
 
 # ==================== 批量请求API函数 ====================
 @st.cache_data(ttl=3600)  # 缓存1小时，减少API调用
-def fetch_all_fixtures_data(days_back: int = 2):
+def fetch_all_fixtures_data(days_back: int = 1):
     """
     批量获取所有fixture类型的数据，减少API调用次数
     使用指数退避策略处理429错误
     """
     headers = {'x-apikey': 'FMNNXJKJMSV6PE4YA36EOAAJXX1WAH84KSWNU8PEUFGRHUPJZA3QTG1FLE09SXJF'}
-    dateto = pd.to_datetime('today')
+    dateto = pd.to_datetime('today')- BDay(1)
     datefrom = dateto - BDay(days_back)
     params = {'from': datefrom, 'to': dateto}
     
@@ -257,7 +257,7 @@ TC_RE_MAPS = {
 }
 
 @st.cache_data()
-def process_tc_data(all_data, api_configs, days_back: int = 2):
+def process_tc_data(all_data, api_configs, days_back: int = 1):
     """
     处理TIMECHARTER数据
     """
@@ -384,7 +384,7 @@ PERIOD_RE_MAPS={
 }
 
 @st.cache_data()
-def process_period_data(all_data, api_configs, days_back: int = 2):
+def process_period_data(all_data, api_configs, days_back: int = 1):
     """
     处理PERIOD数据
     """
@@ -516,7 +516,7 @@ VC_RE_MAPS={
 }
 
 @st.cache_data()
-def process_voyage_grain_data(all_data, api_configs, days_back: int = 2):
+def process_voyage_grain_data(all_data, api_configs, days_back: int = 1):
     """
     处理VOYAGE(GRAIN)数据
     """
@@ -637,7 +637,7 @@ def process_voyage_grain_data(all_data, api_configs, days_back: int = 2):
         return None
 
 @st.cache_data()
-def process_voyage_coal_data(all_data, api_configs, days_back: int = 2):
+def process_voyage_coal_data(all_data, api_configs, days_back: int = 1):
     """
     处理VOYAGE(COAL)数据
     """
@@ -758,7 +758,7 @@ def process_voyage_coal_data(all_data, api_configs, days_back: int = 2):
         return None
 
 @st.cache_data()
-def process_voyage_misc_data(all_data, api_configs, days_back: int = 2):
+def process_voyage_misc_data(all_data, api_configs, days_back: int = 1):
     """
     处理VOYAGE(MISC)数据
     """
@@ -878,7 +878,7 @@ def process_voyage_misc_data(all_data, api_configs, days_back: int = 2):
         return None
 
 @st.cache_data()
-def process_voyage_ore_data(all_data, api_configs, days_back: int = 2):
+def process_voyage_ore_data(all_data, api_configs, days_back: int = 1):
     """
     处理VOYAGE(ORE)数据
     """
@@ -1009,7 +1009,7 @@ def update_data():
     st.rerun() #拿到true之后立即重新运行脚本
 
 #如果session里会存在force_15_days的key，那么days_back就设置为15，用pop是用一次之后就删掉
-days_back = 15 if st.session_state.pop('force_15_days', None) else 2 
+days_back = 3 if st.session_state.pop('force_15_days', None) else 1 
 
 """
 pop(key, None) 会把 key 对应的值取出来同时删掉；如果 key 不存在就返回 None。
