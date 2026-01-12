@@ -379,13 +379,12 @@ def process_tc_data(all_data, api_configs, days_back: int = 1):
             spot_old = github_manager.load_fixture_data('timecharter.csv')
             if spot_old is not None and not spot_old.empty:
                 spot_old.set_index('date', inplace=True)
-                st.text(f'从GitHub加载TIMECHARTER数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date()}')
+                st.text(f'从GitHub加载TIMECHARTER数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date() if not spot_old.empty else "N/A"}')
         except Exception as e:
             st.warning(f"从GitHub加载TIMECHARTER数据失败: {e}")
     
     if not data or 'fixtures' not in data or not data['fixtures']:
         st.warning("未获取到TIMECHARTER API数据")
-        # 如果API没有数据，返回现有数据（不更新GitHub）
         return spot_old if spot_old is not None and not spot_old.empty else None
     
     try:
@@ -427,24 +426,34 @@ def process_tc_data(all_data, api_configs, days_back: int = 1):
             st.warning("TIMECHARTER: 新获取的数据为空")
             return spot_old if spot_old is not None and not spot_old.empty else None
         
+        # 获取新数据的日期
+        new_dates = spot_tcfix.index.unique()
+        st.text(f'新数据日期范围: {new_dates.min().date()} 到 {new_dates.max().date()}')
+        
         # 合并数据
         if spot_old is not None and not spot_old.empty:
-            st.text(f'TIMECHARTER GitHub数据更新前: {spot_old.index[-1].date()}')
+            # 找出历史数据中与新数据日期相同的记录
+            common_dates = spot_old.index.intersection(new_dates)
             
-            # 合并所有数据（包括旧数据和新数据）
-            spot_combined = pd.concat([spot_old, spot_tcfix])
+            if not common_dates.empty:
+                st.text(f'发现 {len(common_dates)} 个重复日期需要更新')
+                
+                # 从历史数据中移除这些日期的记录
+                spot_old_filtered = spot_old[~spot_old.index.isin(common_dates)]
+                
+                # 合并剩余的历史数据和新数据
+                spot_combined = pd.concat([spot_old_filtered, spot_tcfix])
+                
+                st.text(f'移除 {len(common_dates)} 个日期的旧记录，添加 {len(spot_tcfix)} 条新记录')
+            else:
+                # 没有重复日期，直接合并
+                spot_combined = pd.concat([spot_old, spot_tcfix])
+                st.text('没有重复日期，直接合并数据')
             
-            # 重置索引以便去重
-            spot_combined = spot_combined.reset_index()
-            
-            # 基于date和shipName去重，保留最新的（最后出现的）
-            spot_combined = spot_combined.drop_duplicates(keep='last')
-            
-            # 重新设置索引
-            spot_combined.set_index('date', inplace=True)
+            # 按日期排序
             spot_combined.sort_index(inplace=True)
             
-            st.text(f'合并后数据条数: {len(spot_combined)}，新数据条数: {len(spot_tcfix)}')
+            st.text(f'合并后总记录数: {len(spot_combined)}，历史记录: {len(spot_old)}，新记录: {len(spot_tcfix)}')
             
             # 保存到GitHub（自动保存，不需要按钮）
             if github_manager:
@@ -504,13 +513,12 @@ def process_period_data(all_data, api_configs, days_back: int = 1):
             spot_old = github_manager.load_fixture_data('periodcharter.csv')
             if spot_old is not None and not spot_old.empty:
                 spot_old.set_index('date', inplace=True)
-                st.text(f'从GitHub加载PERIOD数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date()}')
+                st.text(f'从GitHub加载PERIOD数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date() if not spot_old.empty else "N/A"}')
         except Exception as e:
             st.warning(f"从GitHub加载PERIOD数据失败: {e}")
     
     if not data or 'fixtures' not in data or not data['fixtures']:
         st.warning("未获取到PERIOD API数据")
-        # 如果API没有数据，返回现有数据（不更新GitHub）
         return spot_old if spot_old is not None and not spot_old.empty else None
     
     try:
@@ -552,24 +560,34 @@ def process_period_data(all_data, api_configs, days_back: int = 1):
             st.warning("PERIOD: 新获取的数据为空")
             return spot_old if spot_old is not None and not spot_old.empty else None
         
+        # 获取新数据的日期
+        new_dates = spot_periodfix.index.unique()
+        st.text(f'新数据日期范围: {new_dates.min().date()} 到 {new_dates.max().date()}')
+        
         # 合并数据
         if spot_old is not None and not spot_old.empty:
-            st.text(f'PERIOD GitHub数据更新前: {spot_old.index[-1].date()}')
+            # 找出历史数据中与新数据日期相同的记录
+            common_dates = spot_old.index.intersection(new_dates)
             
-            # 合并所有数据（包括旧数据和新数据）
-            spot_combined = pd.concat([spot_old, spot_periodfix])
+            if not common_dates.empty:
+                st.text(f'发现 {len(common_dates)} 个重复日期需要更新')
+                
+                # 从历史数据中移除这些日期的记录
+                spot_old_filtered = spot_old[~spot_old.index.isin(common_dates)]
+                
+                # 合并剩余的历史数据和新数据
+                spot_combined = pd.concat([spot_old_filtered, spot_periodfix])
+                
+                st.text(f'移除 {len(common_dates)} 个日期的旧记录，添加 {len(spot_periodfix)} 条新记录')
+            else:
+                # 没有重复日期，直接合并
+                spot_combined = pd.concat([spot_old, spot_periodfix])
+                st.text('没有重复日期，直接合并数据')
             
-            # 重置索引以便去重
-            spot_combined = spot_combined.reset_index()
-            
-            # 基于date和shipName去重，保留最新的（最后出现的）
-            spot_combined = spot_combined.drop_duplicates(keep='last')
-            
-            # 重新设置索引
-            spot_combined.set_index('date', inplace=True)
+            # 按日期排序
             spot_combined.sort_index(inplace=True)
             
-            st.text(f'合并后数据条数: {len(spot_combined)}，新数据条数: {len(spot_periodfix)}')
+            st.text(f'合并后总记录数: {len(spot_combined)}，历史记录: {len(spot_old)}，新记录: {len(spot_periodfix)}')
             
             # 保存到GitHub（自动保存，不需要按钮）
             if github_manager:
@@ -610,7 +628,7 @@ VC_RE_MAPS={
     'cargoSize': re.compile(r"(\d+/\d+)", re.I), #把70000/5这样的抓出来
     'freeText': re.compile(r"\b(\d+(?:/\d+)?\s+[A-Za-z]+)\b", re.I),#抓 数字+任意长度月份单词 或 prompt
     'comment': re.compile(r"<([^>]+)>", re.I),#取第一对尖括号 <...> 之间的任意字符
-    'freight': re.compile(r'(\$[^\s]*(?:\s[^\s]*)?)', re.I),#第一个美元符号开始、直到遇到第二个空格前"的运费金额
+    'freight': re.compile(r'\$([^\s]+)', re.I),#第一个美元符号后直到遇到空格的字符串,#第一个美元符号开始、直到遇到第二个空格前"的运费金额
 }
 
 @st.cache_data()
@@ -627,13 +645,12 @@ def process_voyage_grain_data(all_data, api_configs, days_back: int = 1):
             spot_old = github_manager.load_fixture_data('voyage_grain.csv')
             if spot_old is not None and not spot_old.empty:
                 spot_old.set_index('date', inplace=True)
-                st.text(f'从GitHub加载VOYAGE(GRAIN)数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date()}')
+                st.text(f'从GitHub加载VOYAGE(GRAIN)数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date() if not spot_old.empty else "N/A"}')
         except Exception as e:
             st.warning(f"从GitHub加载VOYAGE(GRAIN)数据失败: {e}")
     
     if not data or 'fixtures' not in data or not data['fixtures']:
         st.warning("未获取到VOYAGE(GRAIN) API数据")
-        # 如果API没有数据，返回现有数据（不更新GitHub）
         return spot_old if spot_old is not None and not spot_old.empty else None
     
     try:
@@ -675,24 +692,34 @@ def process_voyage_grain_data(all_data, api_configs, days_back: int = 1):
             st.warning("VOYAGE(GRAIN): 新获取的数据为空")
             return spot_old if spot_old is not None and not spot_old.empty else None
         
+        # 获取新数据的日期
+        new_dates = spot_vcgrfix.index.unique()
+        st.text(f'新数据日期范围: {new_dates.min().date()} 到 {new_dates.max().date()}')
+        
         # 合并数据
         if spot_old is not None and not spot_old.empty:
-            st.text(f'VOYAGE(GRAIN) GitHub数据更新前: {spot_old.index[-1].date()}')
+            # 找出历史数据中与新数据日期相同的记录
+            common_dates = spot_old.index.intersection(new_dates)
             
-            # 合并所有数据（包括旧数据和新数据）
-            spot_combined = pd.concat([spot_old, spot_vcgrfix])
+            if not common_dates.empty:
+                st.text(f'发现 {len(common_dates)} 个重复日期需要更新')
+                
+                # 从历史数据中移除这些日期的记录
+                spot_old_filtered = spot_old[~spot_old.index.isin(common_dates)]
+                
+                # 合并剩余的历史数据和新数据
+                spot_combined = pd.concat([spot_old_filtered, spot_vcgrfix])
+                
+                st.text(f'移除 {len(common_dates)} 个日期的旧记录，添加 {len(spot_vcgrfix)} 条新记录')
+            else:
+                # 没有重复日期，直接合并
+                spot_combined = pd.concat([spot_old, spot_vcgrfix])
+                st.text('没有重复日期，直接合并数据')
             
-            # 重置索引以便去重
-            spot_combined = spot_combined.reset_index()
-            
-            # 基于date和shipName去重，保留最新的（最后出现的）
-            spot_combined = spot_combined.drop_duplicates(keep='last')
-            
-            # 重新设置索引
-            spot_combined.set_index('date', inplace=True)
+            # 按日期排序
             spot_combined.sort_index(inplace=True)
             
-            st.text(f'合并后数据条数: {len(spot_combined)}，新数据条数: {len(spot_vcgrfix)}')
+            st.text(f'合并后总记录数: {len(spot_combined)}，历史记录: {len(spot_old)}，新记录: {len(spot_vcgrfix)}')
             
             # 保存到GitHub（自动保存，不需要按钮）
             if github_manager:
@@ -739,13 +766,12 @@ def process_voyage_coal_data(all_data, api_configs, days_back: int = 1):
             spot_old = github_manager.load_fixture_data('voyage_coal.csv')
             if spot_old is not None and not spot_old.empty:
                 spot_old.set_index('date', inplace=True)
-                st.text(f'从GitHub加载VOYAGE(COAL)数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date()}')
+                st.text(f'从GitHub加载VOYAGE(COAL)数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date() if not spot_old.empty else "N/A"}')
         except Exception as e:
             st.warning(f"从GitHub加载VOYAGE(COAL)数据失败: {e}")
     
     if not data or 'fixtures' not in data or not data['fixtures']:
         st.warning("未获取到VOYAGE(COAL) API数据")
-        # 如果API没有数据，返回现有数据（不更新GitHub）
         return spot_old if spot_old is not None and not spot_old.empty else None
     
     try:
@@ -787,24 +813,34 @@ def process_voyage_coal_data(all_data, api_configs, days_back: int = 1):
             st.warning("VOYAGE(COAL): 新获取的数据为空")
             return spot_old if spot_old is not None and not spot_old.empty else None
         
+        # 获取新数据的日期
+        new_dates = spot_vccofix.index.unique()
+        st.text(f'新数据日期范围: {new_dates.min().date()} 到 {new_dates.max().date()}')
+        
         # 合并数据
         if spot_old is not None and not spot_old.empty:
-            st.text(f'VOYAGE(COAL) GitHub数据更新前: {spot_old.index[-1].date()}')
+            # 找出历史数据中与新数据日期相同的记录
+            common_dates = spot_old.index.intersection(new_dates)
             
-            # 合并所有数据（包括旧数据和新数据）
-            spot_combined = pd.concat([spot_old, spot_vccofix])
+            if not common_dates.empty:
+                st.text(f'发现 {len(common_dates)} 个重复日期需要更新')
+                
+                # 从历史数据中移除这些日期的记录
+                spot_old_filtered = spot_old[~spot_old.index.isin(common_dates)]
+                
+                # 合并剩余的历史数据和新数据
+                spot_combined = pd.concat([spot_old_filtered, spot_vccofix])
+                
+                st.text(f'移除 {len(common_dates)} 个日期的旧记录，添加 {len(spot_vccofix)} 条新记录')
+            else:
+                # 没有重复日期，直接合并
+                spot_combined = pd.concat([spot_old, spot_vccofix])
+                st.text('没有重复日期，直接合并数据')
             
-            # 重置索引以便去重
-            spot_combined = spot_combined.reset_index()
-            
-            # 基于date和shipName去重，保留最新的（最后出现的）
-            spot_combined = spot_combined.drop_duplicates(keep='last')
-            
-            # 重新设置索引
-            spot_combined.set_index('date', inplace=True)
+            # 按日期排序
             spot_combined.sort_index(inplace=True)
             
-            st.text(f'合并后数据条数: {len(spot_combined)}，新数据条数: {len(spot_vccofix)}')
+            st.text(f'合并后总记录数: {len(spot_combined)}，历史记录: {len(spot_old)}，新记录: {len(spot_vccofix)}')
             
             # 保存到GitHub（自动保存，不需要按钮）
             if github_manager:
@@ -851,13 +887,12 @@ def process_voyage_misc_data(all_data, api_configs, days_back: int = 1):
             spot_old = github_manager.load_fixture_data('voyage_misc.csv')
             if spot_old is not None and not spot_old.empty:
                 spot_old.set_index('date', inplace=True)
-                st.text(f'从GitHub加载VOYAGE(MISC)数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date()}')
+                st.text(f'从GitHub加载VOYAGE(MISC)数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date() if not spot_old.empty else "N/A"}')
         except Exception as e:
             st.warning(f"从GitHub加载VOYAGE(MISC)数据失败: {e}")
     
     if not data or 'fixtures' not in data or not data['fixtures']:
         st.warning("未获取到VOYAGE(MISC) API数据")
-        # 如果API没有数据，返回现有数据（不更新GitHub）
         return spot_old if spot_old is not None and not spot_old.empty else None
     
     try:
@@ -899,24 +934,34 @@ def process_voyage_misc_data(all_data, api_configs, days_back: int = 1):
             st.warning("VOYAGE(MISC): 新获取的数据为空")
             return spot_old if spot_old is not None and not spot_old.empty else None
         
+        # 获取新数据的日期
+        new_dates = spot_vcmifix.index.unique()
+        st.text(f'新数据日期范围: {new_dates.min().date()} 到 {new_dates.max().date()}')
+        
         # 合并数据
         if spot_old is not None and not spot_old.empty:
-            st.text(f'VOYAGE(MISC) GitHub数据更新前: {spot_old.index[-1].date()}')
+            # 找出历史数据中与新数据日期相同的记录
+            common_dates = spot_old.index.intersection(new_dates)
             
-            # 合并所有数据（包括旧数据和新数据）
-            spot_combined = pd.concat([spot_old, spot_vcmifix])
+            if not common_dates.empty:
+                st.text(f'发现 {len(common_dates)} 个重复日期需要更新')
+                
+                # 从历史数据中移除这些日期的记录
+                spot_old_filtered = spot_old[~spot_old.index.isin(common_dates)]
+                
+                # 合并剩余的历史数据和新数据
+                spot_combined = pd.concat([spot_old_filtered, spot_vcmifix])
+                
+                st.text(f'移除 {len(common_dates)} 个日期的旧记录，添加 {len(spot_vcmifix)} 条新记录')
+            else:
+                # 没有重复日期，直接合并
+                spot_combined = pd.concat([spot_old, spot_vcmifix])
+                st.text('没有重复日期，直接合并数据')
             
-            # 重置索引以便去重
-            spot_combined = spot_combined.reset_index()
-            
-            # 基于date和shipName去重，保留最新的（最后出现的）
-            spot_combined = spot_combined.drop_duplicates(keep='last')
-            
-            # 重新设置索引
-            spot_combined.set_index('date', inplace=True)
+            # 按日期排序
             spot_combined.sort_index(inplace=True)
             
-            st.text(f'合并后数据条数: {len(spot_combined)}，新数据条数: {len(spot_vcmifix)}')
+            st.text(f'合并后总记录数: {len(spot_combined)}，历史记录: {len(spot_old)}，新记录: {len(spot_vcmifix)}')
             
             # 保存到GitHub（自动保存，不需要按钮）
             if github_manager:
@@ -963,13 +1008,12 @@ def process_voyage_ore_data(all_data, api_configs, days_back: int = 1):
             spot_old = github_manager.load_fixture_data('voyage_ore.csv')
             if spot_old is not None and not spot_old.empty:
                 spot_old.set_index('date', inplace=True)
-                st.text(f'从GitHub加载VOYAGE(ORE)数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date()}')
+                st.text(f'从GitHub加载VOYAGE(ORE)数据: {len(spot_old)} 条记录，最新日期: {spot_old.index[-1].date() if not spot_old.empty else "N/A"}')
         except Exception as e:
             st.warning(f"从GitHub加载VOYAGE(ORE)数据失败: {e}")
     
     if not data or 'fixtures' not in data or not data['fixtures']:
         st.warning("未获取到VOYAGE(ORE) API数据")
-        # 如果API没有数据，返回现有数据（不更新GitHub）
         return spot_old if spot_old is not None and not spot_old.empty else None
     
     try:
@@ -1011,24 +1055,34 @@ def process_voyage_ore_data(all_data, api_configs, days_back: int = 1):
             st.warning("VOYAGE(ORE): 新获取的数据为空")
             return spot_old if spot_old is not None and not spot_old.empty else None
         
+        # 获取新数据的日期
+        new_dates = spot_vcorfix.index.unique()
+        st.text(f'新数据日期范围: {new_dates.min().date()} 到 {new_dates.max().date()}')
+        
         # 合并数据
         if spot_old is not None and not spot_old.empty:
-            st.text(f'VOYAGE(ORE) GitHub数据更新前: {spot_old.index[-1].date()}')
+            # 找出历史数据中与新数据日期相同的记录
+            common_dates = spot_old.index.intersection(new_dates)
             
-            # 合并所有数据（包括旧数据和新数据）
-            spot_combined = pd.concat([spot_old, spot_vcorfix])
+            if not common_dates.empty:
+                st.text(f'发现 {len(common_dates)} 个重复日期需要更新')
+                
+                # 从历史数据中移除这些日期的记录
+                spot_old_filtered = spot_old[~spot_old.index.isin(common_dates)]
+                
+                # 合并剩余的历史数据和新数据
+                spot_combined = pd.concat([spot_old_filtered, spot_vcorfix])
+                
+                st.text(f'移除 {len(common_dates)} 个日期的旧记录，添加 {len(spot_vcorfix)} 条新记录')
+            else:
+                # 没有重复日期，直接合并
+                spot_combined = pd.concat([spot_old, spot_vcorfix])
+                st.text('没有重复日期，直接合并数据')
             
-            # 重置索引以便去重
-            spot_combined = spot_combined.reset_index()
-            
-            # 基于date和shipName去重，保留最新的（最后出现的）
-            spot_combined = spot_combined.drop_duplicates(keep='last')
-            
-            # 重新设置索引
-            spot_combined.set_index('date', inplace=True)
+            # 按日期排序
             spot_combined.sort_index(inplace=True)
             
-            st.text(f'合并后数据条数: {len(spot_combined)}，新数据条数: {len(spot_vcorfix)}')
+            st.text(f'合并后总记录数: {len(spot_combined)}，历史记录: {len(spot_old)}，新记录: {len(spot_vcorfix)}')
             
             # 保存到GitHub（自动保存，不需要按钮）
             if github_manager:
