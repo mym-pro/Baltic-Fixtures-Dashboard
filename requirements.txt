@@ -1,8 +1,6 @@
-streamlit
-pandas
-numpy
-plotly
-requests
-openpyxl
-github
-python-dateutil
+streamlit>=1.28.0
+pandas>=2.0.0
+numpy>=1.24.0
+requests>=2.31.0
+PyGithub>=2.0.0
+python-dateutil>=2.8.0
