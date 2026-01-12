@@ -438,7 +438,7 @@ def process_tc_data(all_data, api_configs, days_back: int = 1):
             spot_combined = spot_combined.reset_index()
             
             # 基于date和shipName去重，保留最新的（最后出现的）
-            spot_combined = spot_combined.drop_duplicates(subset=['date', 'shipName'], keep='last')
+            spot_combined = spot_combined.drop_duplicates(keep='last')
             
             # 重新设置索引
             spot_combined.set_index('date', inplace=True)
@@ -563,7 +563,7 @@ def process_period_data(all_data, api_configs, days_back: int = 1):
             spot_combined = spot_combined.reset_index()
             
             # 基于date和shipName去重，保留最新的（最后出现的）
-            spot_combined = spot_combined.drop_duplicates(subset=['date', 'shipName'], keep='last')
+            spot_combined = spot_combined.drop_duplicates(keep='last')
             
             # 重新设置索引
             spot_combined.set_index('date', inplace=True)
@@ -686,7 +686,7 @@ def process_voyage_grain_data(all_data, api_configs, days_back: int = 1):
             spot_combined = spot_combined.reset_index()
             
             # 基于date和shipName去重，保留最新的（最后出现的）
-            spot_combined = spot_combined.drop_duplicates(subset=['date', 'shipName'], keep='last')
+            spot_combined = spot_combined.drop_duplicates(keep='last')
             
             # 重新设置索引
             spot_combined.set_index('date', inplace=True)
@@ -798,7 +798,7 @@ def process_voyage_coal_data(all_data, api_configs, days_back: int = 1):
             spot_combined = spot_combined.reset_index()
             
             # 基于date和shipName去重，保留最新的（最后出现的）
-            spot_combined = spot_combined.drop_duplicates(subset=['date', 'shipName'], keep='last')
+            spot_combined = spot_combined.drop_duplicates(keep='last')
             
             # 重新设置索引
             spot_combined.set_index('date', inplace=True)
@@ -910,7 +910,7 @@ def process_voyage_misc_data(all_data, api_configs, days_back: int = 1):
             spot_combined = spot_combined.reset_index()
             
             # 基于date和shipName去重，保留最新的（最后出现的）
-            spot_combined = spot_combined.drop_duplicates(subset=['date', 'shipName'], keep='last')
+            spot_combined = spot_combined.drop_duplicates(keep='last')
             
             # 重新设置索引
             spot_combined.set_index('date', inplace=True)
@@ -1022,7 +1022,7 @@ def process_voyage_ore_data(all_data, api_configs, days_back: int = 1):
             spot_combined = spot_combined.reset_index()
             
             # 基于date和shipName去重，保留最新的（最后出现的）
-            spot_combined = spot_combined.drop_duplicates(subset=['date', 'shipName'], keep='last')
+            spot_combined = spot_combined.drop_duplicates(keep='last')
             
             # 重新设置索引
             spot_combined.set_index('date', inplace=True)
