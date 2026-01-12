@@ -626,7 +626,7 @@ VC_RE_MAPS={
     'shipName': re.compile(r"'([^']+)'", re.I), #找到第一对单引号，把中间不是单引号的那串字符抓出来，就是船名。re.I忽略大小写
     'buildYear': re.compile(r"'[^']+'\s+(\d{4})", re.I), #船名后面的四位数字抓出来
     'cargoSize': re.compile(r"(\d+/\d+)", re.I), #把70000/5这样的抓出来
-    'freeText': re.compile(r"\b(\d+(?:/\d+)?\s+[A-Za-z]+)\b", re.I),#抓 数字+任意长度月份单词 或 prompt
+    'freeText': re.compile(r'(\d+(?:/\d+)?\s+[A-Za-z]+)\s*\$', re.I),#抓 数字+任意长度月份单词 或 prompt
     'comment': re.compile(r"<([^>]+)>", re.I),#取第一对尖括号 <...> 之间的任意字符
     'freight': re.compile(r'\$([^\s]+)', re.I),#第一个美元符号后直到遇到空格的字符串,#第一个美元符号开始、直到遇到第二个空格前"的运费金额
 }
