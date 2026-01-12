@@ -1,2 +1,2 @@
 date,fixtureType,cargoSize,voyageType,shipName,buildYear,dwt,freeText,loadPort,dischargePort,rateAndTerms,charterer,comment,fixtureString,freight,VESSEL TYPE
-2026-01-09,VOYAGE: COAL,75000/10,coal,TBN,0,180000,75000/10 Newport,Newport News - Norfolk,EC India,$32.85 fio 40000shinc/40000shinc,SAIL,,'TBN' 75000/10 Newport News - Norfolk/EC India 10/19 Feb $32.85 fio 40000shinc/40000shinc - SAIL,$,CAPE/VLOC
+2026-01-09,VOYAGE: COAL,75000/10,coal,TBN,0,180000,75000/10 Newport,Newport News - Norfolk,EC India,$32.85 fio 40000shinc/40000shinc,SAIL,,'TBN' 75000/10 Newport News - Norfolk/EC India 10/19 Feb $32.85 fio 40000shinc/40000shinc - SAIL,$32.85 fio,CAPE/VLOC
