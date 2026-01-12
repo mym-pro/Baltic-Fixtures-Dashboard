@@ -1,0 +1,2 @@
+date,fixtureType,cargoSize,voyageType,shipName,buildYear,dwt,freeText,loadPort,dischargePort,rateAndTerms,charterer,comment,fixtureString,freight,VESSEL TYPE
+2026-01-08,VOYAGE: GRAIN,66000/10,grain,Reachy TBN,0,0,66000/10 EC,EC South America,China,$31.00 fio 80000sshex/8000sshex,CHS,,'Reachy TBN' 66000/10 EC South America/China 1/28 Feb $31.00 fio 80000sshex/8000sshex - CHS,$,SMX/UMX/HANDY
