@@ -11,17 +11,17 @@ st.title('Baltic Exchange Fixtures Dashboard')
 
 # ==================== 检查数据是否已加载 ====================
 def check_data_loaded():
-    """检查所需数据是否已在 session_state 中"""
-    required_data = ['tc_spot', 'period_spot', 'vcgr_spot', 'vcco_spot', 'vcmi_spot', 'vcor_spot']
+    """检查是否有任何数据已加载"""
+    all_data_keys = ['tc_spot', 'period_spot', 'vcgr_spot', 'vcco_spot', 'vcmi_spot', 'vcor_spot']
     
-    missing_data = []
-    for data_name in required_data:
-        if data_name not in st.session_state:
-            missing_data.append(data_name)
+    # 检查是否有至少一个数据已加载
+    loaded_data = []
+    for data_name in all_data_keys:
+        if data_name in st.session_state and st.session_state[data_name] is not None:
+            loaded_data.append(data_name)
     
-    # 如果有任何一个数据不在 session_state 中，返回 False
-    if missing_data:
-        return False, missing_data
+    if not loaded_data:
+        return False, ["没有任何数据已加载"]
     
     return True, []
 
