@@ -250,8 +250,8 @@ else:
                 selected_delivery_ports = st.multiselect(
                     "Delivery Ports",
                     options=all_delivery_ports,
-                    default=all_delivery_ports[:5] if len(all_delivery_ports) > 5 else all_delivery_ports,
-                    help="选择要显示的交付港口"
+                    default=[],  # 修改：默认什么都不选
+                    help="选择要显示的交付港口，不选则显示全部"
                 )
             else:
                 selected_delivery_ports = []
@@ -263,8 +263,8 @@ else:
                 selected_load_areas = st.multiselect(
                     "Load Areas",
                     options=all_load_areas,
-                    default=all_load_areas[:5] if len(all_load_areas) > 5 else all_load_areas,
-                    help="选择要显示的装载区域"
+                    default=[],  # 修改：默认什么都不选
+                    help="选择要显示的装载区域，不选则显示全部"
                 )
             else:
                 selected_load_areas = []
@@ -276,8 +276,8 @@ else:
                 selected_vessel_types = st.multiselect(
                     "Vessel Types",
                     options=all_vessel_types,
-                    default=all_vessel_types,
-                    help="选择要显示的船舶类型"
+                    default=[],  # 修改：默认什么都不选
+                    help="选择要显示的船舶类型，不选则显示全部"
                 )
             else:
                 selected_vessel_types = []
@@ -294,8 +294,8 @@ else:
                     selected_via = st.multiselect(
                         "Via Ports",
                         options=all_via,
-                        default=all_via[:5] if len(all_via) > 5 else all_via,
-                        help="选择要显示的中转港口"
+                        default=[],  # 修改：默认什么都不选
+                        help="选择要显示的中转港口，不选则显示全部"
                     )
                 else:
                     selected_via = []
@@ -307,8 +307,8 @@ else:
                 selected_redel = st.multiselect(
                     "Redelivery Ports",
                     options=all_redel,
-                    default=all_redel[:5] if len(all_redel) > 5 else all_redel,
-                    help="选择要显示的还船港口"
+                    default=[],  # 修改：默认什么都不选
+                    help="选择要显示的还船港口，不选则显示全部"
                 )
             else:
                 selected_redel = []
@@ -320,8 +320,8 @@ else:
                 selected_charterers = st.multiselect(
                     "Charterers",
                     options=all_charterers,
-                    default=all_charterers[:5] if len(all_charterers) > 5 else all_charterers,
-                    help="选择要显示的租船人"
+                    default=[],  # 修改：默认什么都不选
+                    help="选择要显示的租船人，不选则显示全部"
                 )
             else:
                 selected_charterers = []
@@ -330,6 +330,7 @@ else:
         # ========== 应用基础筛选 ==========
         filtered_data = latest_data.copy()
         
+        # 只有选择了选项才应用筛选
         if selected_delivery_ports:
             filtered_data = filtered_data[filtered_data['deliveryPort'].isin(selected_delivery_ports) | filtered_data['deliveryPort'].isna()]
         
@@ -358,7 +359,8 @@ else:
                 selected_load_areas = st.multiselect(
                     "Load Areas",
                     options=all_load_areas,
-                    default=all_load_areas[:5] if len(all_load_areas) > 5 else all_load_areas
+                    default=[],  # 修改：默认什么都不选
+                    help="选择要显示的装载区域，不选则显示全部"
                 )
             else:
                 selected_load_areas = []
@@ -369,7 +371,8 @@ else:
                 selected_load_ports = st.multiselect(
                     "Load Ports",
                     options=all_load_ports,
-                    default=all_load_ports[:5] if len(all_load_ports) > 5 else all_load_ports
+                    default=[],  # 修改：默认什么都不选
+                    help="选择要显示的装载港口，不选则显示全部"
                 )
             else:
                 selected_load_ports = []
@@ -381,7 +384,8 @@ else:
                 selected_discharge_ports = st.multiselect(
                     "Discharge Ports",
                     options=all_discharge_ports,
-                    default=all_discharge_ports[:5] if len(all_discharge_ports) > 5 else all_discharge_ports
+                    default=[],  # 修改：默认什么都不选
+                    help="选择要显示的卸货港口，不选则显示全部"
                 )
             else:
                 selected_discharge_ports = []
@@ -392,7 +396,8 @@ else:
                 selected_vessel_types = st.multiselect(
                     "Vessel Types",
                     options=all_vessel_types,
-                    default=all_vessel_types
+                    default=[],  # 修改：默认什么都不选
+                    help="选择要显示的船舶类型，不选则显示全部"
                 )
             else:
                 selected_vessel_types = []
@@ -407,7 +412,8 @@ else:
                 selected_charterers = st.multiselect(
                     "Charterers",
                     options=all_charterers,
-                    default=all_charterers[:5] if len(all_charterers) > 5 else all_charterers
+                    default=[],  # 修改：默认什么都不选
+                    help="选择要显示的租船人，不选则显示全部"
                 )
             else:
                 selected_charterers = []
@@ -419,7 +425,8 @@ else:
                 selected_cargo_sizes = st.multiselect(
                     "Cargo Sizes",
                     options=all_cargo_sizes,
-                    default=all_cargo_sizes[:5] if len(all_cargo_sizes) > 5 else all_cargo_sizes
+                    default=[],  # 修改：默认什么都不选
+                    help="选择要显示的货物尺寸，不选则显示全部"
                 )
             else:
                 selected_cargo_sizes = []
@@ -428,6 +435,7 @@ else:
         # ========== 应用基础筛选 ==========
         filtered_data = latest_data.copy()
         
+        # 只有选择了选项才应用筛选
         if selected_load_areas:
             filtered_data = filtered_data[filtered_data['loadArea'].isin(selected_load_areas) | filtered_data['loadArea'].isna()]
         
@@ -487,7 +495,8 @@ else:
         visible_columns = st.multiselect(
             "选择显示的列",
             options=available_columns,
-            default=default_columns
+            default=default_columns,
+            help="选择要在表格中显示的列"
         )
         
         if visible_columns:
@@ -564,6 +573,19 @@ if data is not None and not data.empty:
         st.sidebar.write(f"**Australia记录占比:** {australia_percentage:.1f}%")
 else:
     st.sidebar.warning(f"**{fixture_type}**: 无数据")
+
+# ==================== 数据状态详情 ====================
+with st.expander("📋 查看所有数据状态详情"):
+    st.write("**数据加载状态详情:**")
+    
+    for name, data in data_mapping:
+        if data is None:
+            st.write(f"❌ **{name}**: 未加载")
+        elif hasattr(data, 'empty') and data.empty:
+            st.write(f"⚠️ **{name}**: 已加载但为空")
+        else:
+            latest_date = data.index.max() if not data.empty else "N/A"
+            st.write(f"✅ **{name}**: {len(data)} 条记录，最新日期: {latest_date}")
 
 # ==================== Australia港口维护说明 ====================
 with st.expander("🛠️ Australia港口关键词维护说明"):
