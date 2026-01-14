@@ -18,14 +18,13 @@ class GitHubConfigManager:
         
         # 尝试从环境变量或Streamlit secrets获取GitHub配置
         try:
-            # 先尝试从环境变量获取，再从secrets获取
-            self.github_owner = os.environ.get("GITHUB_OWNER") or st.secrets.get("GITHUB_OWNER", "")
-            self.github_repo = os.environ.get("GITHUB_REPO") or st.secrets.get("GITHUB_REPO", "")
-            self.github_branch = os.environ.get("GITHUB_BRANCH") or st.secrets.get("GITHUB_BRANCH", "main")
-            self.github_token = os.environ.get("GITHUB_TOKEN") or st.secrets.get("GITHUB_TOKEN", "")
+            self.github_owner = st.secrets.get("GITHUB_OWNER", os.environ.get("GITHUB_OWNER", ""))
+            self.github_repo = st.secrets.get("GITHUB_REPO", os.environ.get("GITHUB_REPO", ""))
+            self.github_branch = st.secrets.get("GITHUB_BRANCH", os.environ.get("GITHUB_BRANCH", "main"))
+            self.github_token = st.secrets.get("GITHUB_TOKEN", os.environ.get("GITHUB_TOKEN", ""))
             
             if not all([self.github_owner, self.github_repo, self.github_token]):
-                st.warning("⚠️ GitHub配置不完整，将使用Session State临时存储")
+                st.warning("GitHub配置不完整，将使用Session State临时存储")
                 self.use_github = False
             else:
                 self.use_github = True
@@ -35,7 +34,7 @@ class GitHubConfigManager:
                 self.raw_url = f"https://raw.githubusercontent.com/{self.github_owner}/{self.github_repo}/{self.github_branch}/{self.config_file}"
                 
         except Exception as e:
-            st.warning(f"⚠️ GitHub配置获取失败: {e}，将使用Session State临时存储")
+            st.warning(f"GitHub配置获取失败: {e}，将使用Session State临时存储")
             self.use_github = False
         
         self.default_config = {
@@ -88,6 +87,18 @@ class GitHubConfigManager:
                     "updated_at": datetime.now().isoformat(),
                     "is_template": True,
                     "usage_count": 0
+                },
+                "FAR_EAST": {
+                    "keywords": [
+                        "CHINA", "JAPAN", "KOREA", "SINGAPORE", 
+                        "TAIWAN", "HONG KONG", "SHANGHAI", "NINGBO",
+                        "QINGDAO", "BUSAN", "YOKOHAMA", "KAOHSIUNG"
+                    ],
+                    "description": "远东地区港口集合",
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat(),
+                    "is_template": True,
+                    "usage_count": 0
                 }
             },
             "version": "2.0",
@@ -115,21 +126,17 @@ class GitHubConfigManager:
                     
                     # 验证配置文件结构
                     if self._validate_config(config):
-                        st.info("✅ 从GitHub加载配置成功")
                         return config
                     else:
-                        st.warning("⚠️ GitHub上的配置文件结构无效，将使用默认配置")
+                        st.warning("GitHub上的配置文件结构无效，将使用默认配置")
                         return self._create_default_github_config()
-                elif response.status_code == 404:
-                    # 文件不存在，创建默认配置
-                    st.info("ℹ️ GitHub上未找到配置文件，将创建默认配置")
-                    return self._create_default_github_config()
                 else:
-                    st.warning(f"⚠️ GitHub API返回错误: {response.status_code}，将使用Session State配置")
-                    return self._load_from_session()
+                    # 文件不存在，创建默认配置
+                    st.info("GitHub上未找到配置文件，将创建默认配置")
+                    return self._create_default_github_config()
                     
             except Exception as e:
-                st.warning(f"⚠️ 从GitHub加载配置失败: {e}，将使用Session State配置")
+                st.warning(f"从GitHub加载配置失败 ({e})，将使用Session State配置")
                 return self._load_from_session()
         else:
             # 不使用GitHub，从Session State加载
@@ -153,14 +160,11 @@ class GitHubConfigManager:
         default_config = self.default_config.copy()
         if self.use_github:
             try:
-                success = self.save_config(default_config)
-                if success:
-                    st.success("✅ 默认配置已创建并保存到GitHub")
-                else:
-                    st.warning("⚠️ 保存默认配置到GitHub失败，将使用Session State")
+                self.save_config(default_config)
+                st.success("✅ 默认配置已创建并保存到GitHub")
             except Exception as e:
-                st.warning(f"⚠️ 保存默认配置到GitHub失败: {e}")
-                st.info("ℹ️ 将使用Session State临时存储配置")
+                st.warning(f"保存默认配置到GitHub失败: {e}")
+                st.info("将使用Session State临时存储配置")
         return default_config
     
     def _validate_config(self, config):
@@ -219,26 +223,21 @@ class GitHubConfigManager:
                 }
                 
                 response = requests.put(self.api_url, headers=headers, json=data)
+                response.raise_for_status()
                 
-                if response.status_code in [200, 201]:
-                    # 同时更新Session State
-                    self._save_to_session(config)
-                    return True
-                else:
-                    st.error(f"❌ GitHub API错误: {response.status_code} - {response.text}")
-                    return False
-                    
+                # 同时更新Session State
+                self._save_to_session(config)
+                
+                return True
             except Exception as e:
-                st.error(f"❌ 保存配置到GitHub失败: {e}")
+                st.error(f"保存配置到GitHub失败: {e}")
                 # 回退到Session State
                 self._save_to_session(config)
                 return False
         else:
             # 保存到Session State
             self._save_to_session(config)
-            st.info("ℹ️ 配置已保存到Session State")
             return True
-    
     
     def get_all_sets(self):
         """获取所有自定义集合"""
