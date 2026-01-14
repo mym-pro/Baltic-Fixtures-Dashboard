@@ -1,18 +1,42 @@
-"""
-配置管理模块
+"""配置管理模块
 负责加载、保存和管理用户的自定义筛选集合配置
+使用GitHub作为存储后端
 """
 
 import json
+import base64
 import os
 from datetime import datetime
 import streamlit as st
+import requests
 
-class ConfigManager:
-    """通用配置管理器"""
+class GitHubConfigManager:
+    """GitHub配置管理器 - 将配置存储在GitHub仓库中"""
     
     def __init__(self, config_file="custom_filters_config.json"):
         self.config_file = config_file
+        
+        # 尝试从环境变量或Streamlit secrets获取GitHub配置
+        try:
+            self.github_owner = st.secrets.get("GITHUB_OWNER", os.environ.get("GITHUB_OWNER", ""))
+            self.github_repo = st.secrets.get("GITHUB_REPO", os.environ.get("GITHUB_REPO", ""))
+            self.github_branch = st.secrets.get("GITHUB_BRANCH", os.environ.get("GITHUB_BRANCH", "main"))
+            self.github_token = st.secrets.get("GITHUB_TOKEN", os.environ.get("GITHUB_TOKEN", ""))
+            
+            if not all([self.github_owner, self.github_repo, self.github_token]):
+                st.warning("GitHub配置不完整，将使用Session State临时存储")
+                self.use_github = False
+            else:
+                self.use_github = True
+                # 构建GitHub API URL
+                self.api_url = f"https://api.github.com/repos/{self.github_owner}/{self.github_repo}/contents/{self.config_file}"
+                # 构建Raw URL（用于读取）
+                self.raw_url = f"https://raw.githubusercontent.com/{self.github_owner}/{self.github_repo}/{self.github_branch}/{self.config_file}"
+                
+        except Exception as e:
+            st.warning(f"GitHub配置获取失败: {e}，将使用Session State临时存储")
+            self.use_github = False
+        
         self.default_config = {
             "custom_sets": {
                 "Australia": {
@@ -83,30 +107,65 @@ class ConfigManager:
         }
     
     def load_config(self):
-        """加载配置文件"""
-        if os.path.exists(self.config_file):
+        """从GitHub或Session State加载配置"""
+        if self.use_github:
             try:
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
+                # 从GitHub加载配置
+                headers = {}
+                if self.github_token:
+                    headers['Authorization'] = f"token {self.github_token}"
                 
-                # 验证配置文件结构
-                if self._validate_config(config):
-                    return config
+                # 尝试从GitHub获取配置
+                response = requests.get(self.api_url, headers=headers)
+                
+                if response.status_code == 200:
+                    # 文件存在，解码内容
+                    content_data = response.json()
+                    content = base64.b64decode(content_data['content']).decode('utf-8')
+                    config = json.loads(content)
+                    
+                    # 验证配置文件结构
+                    if self._validate_config(config):
+                        return config
+                    else:
+                        st.warning("GitHub上的配置文件结构无效，将使用默认配置")
+                        return self._create_default_github_config()
                 else:
-                    st.warning("配置文件结构无效，将使用默认配置")
-                    return self._create_default_config()
+                    # 文件不存在，创建默认配置
+                    st.info("GitHub上未找到配置文件，将创建默认配置")
+                    return self._create_default_github_config()
                     
             except Exception as e:
-                st.warning(f"配置文件加载失败 ({e})，将使用默认配置")
-                return self._create_default_config()
+                st.warning(f"从GitHub加载配置失败 ({e})，将使用Session State配置")
+                return self._load_from_session()
         else:
-            # 如果文件不存在，创建默认配置文件
-            return self._create_default_config()
+            # 不使用GitHub，从Session State加载
+            return self._load_from_session()
     
-    def _create_default_config(self):
-        """创建默认配置并保存到文件"""
-        self.save_config(self.default_config)
-        return self.default_config.copy()
+    def _load_from_session(self):
+        """从Session State加载配置"""
+        if 'app_config' in st.session_state:
+            return st.session_state.app_config
+        else:
+            # 初始化Session State配置
+            self._save_to_session(self.default_config.copy())
+            return st.session_state.app_config
+    
+    def _save_to_session(self, config):
+        """保存配置到Session State"""
+        st.session_state.app_config = config
+    
+    def _create_default_github_config(self):
+        """创建默认配置并保存到GitHub"""
+        default_config = self.default_config.copy()
+        if self.use_github:
+            try:
+                self.save_config(default_config)
+                st.success("✅ 默认配置已创建并保存到GitHub")
+            except Exception as e:
+                st.warning(f"保存默认配置到GitHub失败: {e}")
+                st.info("将使用Session State临时存储配置")
+        return default_config
     
     def _validate_config(self, config):
         """验证配置文件的完整性"""
@@ -127,17 +186,58 @@ class ConfigManager:
             return False
     
     def save_config(self, config):
-        """保存配置文件"""
-        try:
-            # 更新最后修改时间
-            config["last_modified"] = datetime.now().isoformat()
-            
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                json.dump(config, f, ensure_ascii=False, indent=2)
+        """保存配置到GitHub或Session State"""
+        # 更新最后修改时间
+        config["last_modified"] = datetime.now().isoformat()
+        
+        if self.use_github:
+            try:
+                # 获取当前文件的SHA（如果存在）
+                sha = None
+                try:
+                    headers = {'Authorization': f'token {self.github_token}'}
+                    response = requests.get(self.api_url, headers=headers)
+                    if response.status_code == 200:
+                        sha = response.json()['sha']
+                except:
+                    pass  # 文件不存在，sha为None
+                
+                # 准备内容
+                content = json.dumps(config, ensure_ascii=False, indent=2)
+                content_bytes = content.encode('utf-8')
+                content_b64 = base64.b64encode(content_bytes).decode('utf-8')
+                
+                # 准备请求数据
+                data = {
+                    "message": f"Update {self.config_file} via Baltic Dashboard",
+                    "content": content_b64,
+                    "branch": self.github_branch
+                }
+                if sha:
+                    data["sha"] = sha
+                
+                # 发送请求到GitHub API
+                headers = {
+                    'Authorization': f'token {self.github_token}',
+                    'Content-Type': 'application/json'
+                }
+                
+                response = requests.put(self.api_url, headers=headers, json=data)
+                response.raise_for_status()
+                
+                # 同时更新Session State
+                self._save_to_session(config)
+                
+                return True
+            except Exception as e:
+                st.error(f"保存配置到GitHub失败: {e}")
+                # 回退到Session State
+                self._save_to_session(config)
+                return False
+        else:
+            # 保存到Session State
+            self._save_to_session(config)
             return True
-        except Exception as e:
-            st.error(f"配置文件保存失败: {e}")
-            return False
     
     def get_all_sets(self):
         """获取所有自定义集合"""
@@ -228,73 +328,6 @@ class ConfigManager:
         else:
             return False, "集合删除失败"
     
-    def add_keyword(self, set_name, keyword):
-        """向集合添加关键词"""
-        config = self.load_config()
-        sets = config.get("custom_sets", {})
-        
-        set_name_upper = set_name.upper()
-        
-        if set_name_upper not in sets:
-            return False, f"集合 '{set_name}' 不存在"
-        
-        keyword_upper = str(keyword).strip().upper()
-        if not keyword_upper:
-            return False, "关键词不能为空"
-        
-        # 检查关键词是否已存在
-        if keyword_upper in sets[set_name_upper]["keywords"]:
-            return False, "关键词已存在"
-        
-        sets[set_name_upper]["keywords"].append(keyword_upper)
-        sets[set_name_upper]["updated_at"] = datetime.now().isoformat()
-        
-        if self.save_config(config):
-            return True, "关键词添加成功"
-        else:
-            return False, "关键词添加失败"
-    
-    def remove_keyword(self, set_name, keyword):
-        """从集合移除关键词"""
-        config = self.load_config()
-        sets = config.get("custom_sets", {})
-        
-        set_name_upper = set_name.upper()
-        
-        if set_name_upper not in sets:
-            return False, f"集合 '{set_name}' 不存在"
-        
-        keyword_upper = str(keyword).strip().upper()
-        
-        if keyword_upper in sets[set_name_upper]["keywords"]:
-            sets[set_name_upper]["keywords"].remove(keyword_upper)
-            sets[set_name_upper]["updated_at"] = datetime.now().isoformat()
-            
-            if self.save_config(config):
-                return True, "关键词移除成功"
-            else:
-                return False, "关键词移除失败"
-        else:
-            return False, "关键词不存在"
-    
-    def bulk_import_keywords(self, set_name, keywords_text):
-        """批量导入关键词（从文本）"""
-        if not keywords_text.strip():
-            return False, "关键词文本不能为空"
-        
-        # 按行分割，清理每行
-        keywords = []
-        for line in keywords_text.split('\n'):
-            kw = line.strip().upper()
-            if kw:  # 跳过空行
-                keywords.append(kw)
-        
-        if not keywords:
-            return False, "未找到有效关键词"
-        
-        # 更新集合
-        return self.update_set(set_name, keywords=keywords)
-    
     def get_templates(self):
         """获取所有模板集合"""
         config = self.load_config()
@@ -307,7 +340,7 @@ class ConfigManager:
         
         return templates
     
-    def save_as_template(self, set_name, new_template_name=None):
+    def save_as_template(self, set_name):
         """将集合保存为模板"""
         config = self.load_config()
         sets = config.get("custom_sets", {})
@@ -317,24 +350,7 @@ class ConfigManager:
         if set_name_upper not in sets:
             return False, f"集合 '{set_name}' 不存在"
         
-        if new_template_name:
-            # 复制集合为新模板
-            new_template_name_upper = new_template_name.upper()
-            
-            if new_template_name_upper in sets:
-                return False, f"模板 '{new_template_name}' 已存在"
-            
-            # 深拷贝集合数据
-            import copy
-            template_data = copy.deepcopy(sets[set_name_upper])
-            template_data["is_template"] = True
-            template_data["created_at"] = datetime.now().isoformat()
-            template_data["updated_at"] = datetime.now().isoformat()
-            
-            sets[new_template_name_upper] = template_data
-        else:
-            # 将现有集合标记为模板
-            sets[set_name_upper]["is_template"] = True
+        sets[set_name_upper]["is_template"] = True
         
         if self.save_config(config):
             return True, "模板保存成功"
@@ -417,41 +433,15 @@ class ConfigManager:
             else:
                 return False
         return False
-    
-    def search_sets(self, query):
-        """搜索集合（按名称或关键词）"""
-        config = self.load_config()
-        sets = config.get("custom_sets", {})
-        
-        query = query.upper()
-        results = {}
-        
-        for set_name, set_data in sets.items():
-            # 按集合名称搜索
-            if query in set_name:
-                results[set_name] = set_data
-                continue
-            
-            # 按描述搜索
-            if query in set_data.get("description", "").upper():
-                results[set_name] = set_data
-                continue
-            
-            # 按关键词搜索
-            for keyword in set_data.get("keywords", []):
-                if query in keyword:
-                    results[set_name] = set_data
-                    break
-        
-        return results
 
 
 # 创建全局配置管理器实例
-config_manager = ConfigManager()
+config_manager = GitHubConfigManager()
 
 # 简化接口函数
 def init_session_config():
     """初始化Session State中的配置"""
+    # 加载配置到Session State
     if 'app_config' not in st.session_state:
         st.session_state.app_config = config_manager.load_config()
 
@@ -506,9 +496,9 @@ def get_templates():
     """获取所有模板集合"""
     return config_manager.get_templates()
 
-def save_as_template(set_name, new_template_name=None):
+def save_as_template(set_name):
     """将集合保存为模板"""
-    return config_manager.save_as_template(set_name, new_template_name)
+    return config_manager.save_as_template(set_name)
 
 def apply_template(template_name, new_set_name):
     """应用模板创建新集合"""
@@ -538,3 +528,11 @@ def reset_to_default():
 def refresh_session_config():
     """刷新Session State中的配置"""
     init_session_config()
+
+def get_github_status():
+    """获取GitHub存储状态"""
+    return {
+        "use_github": config_manager.use_github,
+        "github_owner": getattr(config_manager, 'github_owner', None),
+        "github_repo": getattr(config_manager, 'github_repo', None)
+    }
