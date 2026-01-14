@@ -1,0 +1,15 @@
+{
+  "custom_sets": {
+    "Australia": {
+      "keywords": ["AUSTRALIA", "AUS", "SYDNEY", "MELBOURNE"],
+      "description": "澳大利亚港口集合",
+      "created_at": "2024-01-01T00:00:00",
+      "updated_at": "2024-01-01T00:00:00",
+      "is_template": true,
+      "usage_count": 0
+    }
+  },
+  "version": "2.0",
+  "created_at": "2024-01-01T00:00:00",
+  "last_modified": "2024-01-01T00:00:00"
+}
