@@ -26,11 +26,11 @@ try:
     )
     CONFIG_MANAGER_AVAILABLE = True
 except ImportError as e:
-    st.error(f"❌ 配置管理模块导入失败: {e}")
+    st.error(f"配置管理模块导入失败: {e}")
     CONFIG_MANAGER_AVAILABLE = False
 
 if not CONFIG_MANAGER_AVAILABLE:
-    st.error("❌ 配置管理模块不可用，请检查config_manager.py文件。")
+    st.error("配置管理模块不可用，请检查config_manager.py文件。")
     st.stop()
 
 # 初始化配置
@@ -45,8 +45,6 @@ if 'editing_description' not in st.session_state:
     st.session_state.editing_description = ""
 if 'new_set_mode' not in st.session_state:
     st.session_state.new_set_mode = False
-if 'current_tab' not in st.session_state:
-    st.session_state.current_tab = "📋 集合列表"
 
 # 辅助函数
 def load_editing_set(set_name):
@@ -57,8 +55,6 @@ def load_editing_set(set_name):
         st.session_state.editing_keywords = "\n".join(set_data.get('keywords', []))
         st.session_state.editing_description = set_data.get('description', '')
         st.session_state.new_set_mode = False
-        st.session_state.current_tab = "✏️ 集合编辑"
-        st.rerun()
 
 def clear_editing_set():
     """清除编辑状态"""
@@ -67,24 +63,16 @@ def clear_editing_set():
     st.session_state.editing_description = ""
     st.session_state.new_set_mode = False
 
-# 创建导航标签
-tabs = ["📋 集合列表", "✏️ 集合编辑", "📚 模板库", "📥 导入/导出"]
-
-# 使用radio模拟标签页切换
-st.markdown("---")
-selected_tab = st.radio(
-    "导航",
-    tabs,
-    horizontal=True,
-    label_visibility="collapsed",
-    key="nav_radio"
-)
-
-# 更新当前标签页
-st.session_state.current_tab = selected_tab
+# 使用 Streamlit 原生标签页
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📋 集合列表", 
+    "✏️ 集合编辑", 
+    "📚 模板库", 
+    "📥 导入/导出"
+])
 
 # ==================== 标签页1：集合列表 ====================
-if st.session_state.current_tab == "📋 集合列表":
+with tab1:
     st.header("所有自定义集合")
     
     # 搜索功能
@@ -120,7 +108,7 @@ if st.session_state.current_tab == "📋 集合列表":
     st.write(f"共 {len(filtered_sets)} 个集合（总计 {len(custom_sets)} 个）")
     
     if not filtered_sets:
-        st.info("📭 没有找到集合。")
+        st.info("没有找到集合。")
     else:
         # 为每个集合创建一个可展开的卡片
         for set_name, set_data in filtered_sets.items():
@@ -160,6 +148,9 @@ if st.session_state.current_tab == "📋 集合列表":
                     # 编辑按钮
                     if st.button("编辑", key=f"edit_{set_name}", use_container_width=True):
                         load_editing_set(set_name)
+                        # 切换到编辑标签页 - 使用标签页的索引
+                        st.session_state.active_tab = 1
+                        st.rerun()
                     
                     # 删除按钮（模板不能删除）
                     if not is_template:
@@ -290,11 +281,12 @@ if st.session_state.current_tab == "📋 集合列表":
     if st.button("➕ 创建新集合", use_container_width=True, key="create_new_set"):
         clear_editing_set()
         st.session_state.new_set_mode = True
-        st.session_state.current_tab = "✏️ 集合编辑"
+        # 切换到编辑标签页
+        st.session_state.active_tab = 1
         st.rerun()
 
 # ==================== 标签页2：集合编辑 ====================
-elif st.session_state.current_tab == "✏️ 集合编辑":
+with tab2:
     st.header("编辑集合")
     
     # 显示当前模式
@@ -310,7 +302,7 @@ elif st.session_state.current_tab == "✏️ 集合编辑":
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔍 查看集合列表", use_container_width=True):
-                st.session_state.current_tab = "📋 集合列表"
+                st.session_state.active_tab = 0
                 st.rerun()
         with col2:
             if st.button("🆕 创建新集合", use_container_width=True):
@@ -350,13 +342,13 @@ elif st.session_state.current_tab == "✏️ 集合编辑":
     with col1:
         if st.button("💾 保存集合", use_container_width=True, type="primary", key="save_set"):
             if not new_set_name.strip():
-                st.error("❌ 集合名称不能为空")
+                st.error("集合名称不能为空")
             else:
                 # 处理关键词文本
                 keywords = [kw.strip().upper() for kw in keywords_text.split('\n') if kw.strip()]
                 
                 if not keywords:
-                    st.error("❌ 关键词列表不能为空")
+                    st.error("关键词列表不能为空")
                 else:
                     if not st.session_state.get('new_set_mode', False) and st.session_state.get('editing_set_name'):
                         # 更新现有集合
@@ -369,7 +361,7 @@ elif st.session_state.current_tab == "✏️ 集合编辑":
                         st.success(message)
                         clear_editing_set()
                         # 切换回集合列表
-                        st.session_state.current_tab = "📋 集合列表"
+                        st.session_state.active_tab = 0
                         st.rerun()
                     else:
                         st.error(message)
@@ -378,7 +370,7 @@ elif st.session_state.current_tab == "✏️ 集合编辑":
         if st.button("🗑️ 取消编辑", use_container_width=True, type="secondary", key="cancel_edit"):
             clear_editing_set()
             # 切换回集合列表
-            st.session_state.current_tab = "📋 集合列表"
+            st.session_state.active_tab = 0
             st.rerun()
     
     with col3:
@@ -403,7 +395,7 @@ elif st.session_state.current_tab == "✏️ 集合编辑":
                 if success:
                     st.success(message)
                     clear_editing_set()
-                    st.session_state.current_tab = "📋 集合列表"
+                    st.session_state.active_tab = 0
                     st.rerun()
                 else:
                     st.error(message)
@@ -426,7 +418,7 @@ elif st.session_state.current_tab == "✏️ 集合编辑":
             st.warning(f"发现重复关键词: {', '.join(duplicates)}")
 
 # ==================== 标签页3：模板库 ====================
-elif st.session_state.current_tab == "📚 模板库":
+with tab3:
     st.header("模板库")
     st.write("使用预定义模板快速创建集合")
     
@@ -434,7 +426,7 @@ elif st.session_state.current_tab == "📚 模板库":
     templates = get_templates()
     
     if not templates:
-        st.info("📭 没有可用的模板。")
+        st.info("没有可用的模板。")
     else:
         # 显示模板列表
         for template_name, template_data in templates.items():
@@ -463,7 +455,7 @@ elif st.session_state.current_tab == "📚 模板库":
                 with col1:
                     if st.button("✅ 应用此模板", key=f"apply_{template_name}", use_container_width=True):
                         if not new_name.strip():
-                            st.error("❌ 请输入新集合名称")
+                            st.error("请输入新集合名称")
                         else:
                             success, message = apply_template(template_name, new_name)
                             if success:
@@ -475,9 +467,11 @@ elif st.session_state.current_tab == "📚 模板库":
                 with col2:
                     if st.button("📝 编辑此模板", key=f"edit_template_{template_name}", use_container_width=True):
                         load_editing_set(template_name)
+                        st.session_state.active_tab = 1
+                        st.rerun()
 
 # ==================== 标签页4：导入/导出 ====================
-elif st.session_state.current_tab == "📥 导入/导出":
+with tab4:
     st.header("导入/导出配置")
     
     col1, col2 = st.columns(2)
@@ -500,7 +494,7 @@ elif st.session_state.current_tab == "📥 导入/导出":
             try:
                 st.json(json.loads(config_json))
             except:
-                st.error("❌ 配置格式无效")
+                st.error("配置格式无效")
     
     with col2:
         st.subheader("导入配置")
@@ -522,7 +516,7 @@ elif st.session_state.current_tab == "📥 导入/导出":
                             st.write(f"包含 {set_count} 个集合")
                         st.json(preview_config)
                     except:
-                        st.error("❌ 无法预览配置")
+                        st.error("无法预览配置")
                 
                 if st.button("🔄 导入配置", use_container_width=True):
                     success, message = import_config(config_data)
@@ -560,7 +554,7 @@ elif st.session_state.current_tab == "📥 导入/导出":
                         else:
                             st.error(message)
                     else:
-                        st.error("❌ 请输入正确的确认文本")
+                        st.error("请输入正确的确认文本")
 
 # 侧边栏信息
 st.sidebar.title("ℹ️ 使用说明")
@@ -580,23 +574,6 @@ st.sidebar.info("""
 4. 在**ALLFIX_PAGE**中使用集合进行筛选
 """)
 
-# 添加GitHub状态显示
-try:
-    from config_manager import get_github_status
-    github_status = get_github_status()
-    
-    st.sidebar.divider()
-    st.sidebar.title("🌐 GitHub存储状态")
-    
-    if github_status.get("use_github", False):
-        st.sidebar.success("✅ GitHub存储已启用")
-        st.sidebar.write(f"仓库: {github_status.get('github_owner')}/{github_status.get('github_repo')}")
-    else:
-        st.sidebar.warning("⚠️ GitHub存储未启用")
-        st.sidebar.info("配置将临时存储在Session中，刷新页面会丢失数据。")
-except:
-    pass
-
 st.sidebar.divider()
 st.sidebar.write("**当前配置统计**")
 custom_sets = get_custom_sets()
@@ -614,4 +591,4 @@ else:
 # 添加返回按钮
 st.sidebar.divider()
 if st.sidebar.button("⬅️ 返回数据展示页面"):
-    st.switch_page("pages/1_📊_ALLFIX_PAGE.py")
+    st.switch_page("pages/1_📊_ALLFIX_PAGE.py") 
