@@ -37,8 +37,6 @@ if not CONFIG_MANAGER_AVAILABLE:
 init_session_config()
 
 # 初始化session state
-if 'current_tab' not in st.session_state:
-    st.session_state.current_tab = "集合列表"
 if 'editing_set_name' not in st.session_state:
     st.session_state.editing_set_name = None
 if 'editing_keywords' not in st.session_state:
@@ -57,8 +55,6 @@ def load_editing_set(set_name):
         st.session_state.editing_keywords = "\n".join(set_data.get('keywords', []))
         st.session_state.editing_description = set_data.get('description', '')
         st.session_state.new_set_mode = False
-        st.session_state.current_tab = "集合编辑"
-        st.rerun()
 
 def clear_editing_set():
     """清除编辑状态"""
@@ -67,49 +63,21 @@ def clear_editing_set():
     st.session_state.editing_description = ""
     st.session_state.new_set_mode = False
 
-def start_new_set():
-    """开始创建新集合"""
-    clear_editing_set()
-    st.session_state.new_set_mode = True
-    st.session_state.current_tab = "集合编辑"
-    st.rerun()
-
-# 创建标签页导航
-st.markdown("---")
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    if st.button("📋 集合列表", use_container_width=True, 
-                 type="primary" if st.session_state.current_tab == "集合列表" else "secondary"):
-        st.session_state.current_tab = "集合列表"
-        st.rerun()
-
-with col2:
-    if st.button("✏️ 集合编辑", use_container_width=True,
-                 type="primary" if st.session_state.current_tab == "集合编辑" else "secondary"):
-        st.session_state.current_tab = "集合编辑"
-        st.rerun()
-
-with col3:
-    if st.button("📚 模板库", use_container_width=True,
-                 type="primary" if st.session_state.current_tab == "模板库" else "secondary"):
-        st.session_state.current_tab = "模板库"
-        st.rerun()
-
-with col4:
-    if st.button("📥 导入/导出", use_container_width=True,
-                 type="primary" if st.session_state.current_tab == "导入/导出" else "secondary"):
-        st.session_state.current_tab = "导入/导出"
-        st.rerun()
-
-st.markdown("---")
+# 使用 Streamlit 原生标签页
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📋 集合列表", 
+    "✏️ 集合编辑", 
+    "📚 模板库", 
+    "📥 导入/导出"
+])
 
 # ==================== 标签页1：集合列表 ====================
-if st.session_state.current_tab == "集合列表":
+# ==================== 标签页1：集合列表 ====================
+with tab1:
     st.header("所有自定义集合")
     
     # 搜索功能
-    search_query = st.text_input("搜索集合（按名称或关键词）", "")
+    search_query = st.text_input("搜索集合（按名称或关键词）", "", key="search_input")
     
     # 获取所有集合
     custom_sets = get_custom_sets()
@@ -181,6 +149,8 @@ if st.session_state.current_tab == "集合列表":
                     # 编辑按钮
                     if st.button("编辑", key=f"edit_{set_name}", use_container_width=True):
                         load_editing_set(set_name)
+                        # 切换到编辑标签页
+                        st.switch_to_tab("集合编辑")
                     
                     # 删除按钮（模板不能删除）
                     if not is_template:
@@ -195,44 +165,156 @@ if st.session_state.current_tab == "集合列表":
                         st.button("删除", key=f"delete_disabled_{set_name}", 
                                  use_container_width=True, disabled=True)
                 
-                # 显示关键词
+                # ========== 修改这里：显示所有关键词 ==========
                 if keywords:
-                    st.write("**关键词预览**:")
-                    cols = st.columns(5)
-                    for idx, kw in enumerate(keywords[:10]):  # 只显示前10个
-                        with cols[idx % 5]:
-                            st.code(kw)
-                    if len(keywords) > 10:
-                        st.caption(f"... 还有 {len(keywords)-10} 个关键词")
+                    # 创建两个标签页：预览和全部
+                    keyword_tab1, keyword_tab2 = st.tabs(["📋 关键词预览", "📚 全部关键词"])
+                    
+                    with keyword_tab1:
+                        st.write("**关键词预览（前20个）:**")
+                        if len(keywords) > 20:
+                            preview_keywords = keywords[:20]
+                            cols = st.columns(5)
+                            for idx, kw in enumerate(preview_keywords):
+                                with cols[idx % 5]:
+                                    st.code(kw, language=None)
+                            st.caption(f"还有 {len(keywords)-20} 个关键词未显示，切换到'全部关键词'标签查看")
+                        else:
+                            # 如果关键词少于20个，直接显示全部
+                            cols = st.columns(5)
+                            for idx, kw in enumerate(keywords):
+                                with cols[idx % 5]:
+                                    st.code(kw, language=None)
+                    
+                    with keyword_tab2:
+                        st.write(f"**全部关键词 ({len(keywords)}个):**")
+                        
+                        # 添加关键词搜索功能
+                        keyword_search = st.text_input(
+                            "🔍 搜索关键词", 
+                            placeholder="输入关键词进行筛选",
+                            key=f"keyword_search_{set_name}"
+                        )
+                        
+                        if keyword_search:
+                            # 筛选关键词
+                            filtered_keywords = [kw for kw in keywords if keyword_search.upper() in kw]
+                            st.info(f"找到 {len(filtered_keywords)} 个匹配的关键词")
+                            
+                            if filtered_keywords:
+                                # 显示筛选后的关键词
+                                cols = st.columns(5)
+                                for idx, kw in enumerate(filtered_keywords):
+                                    with cols[idx % 5]:
+                                        st.code(kw, language=None)
+                            else:
+                                st.warning("没有找到匹配的关键词")
+                        else:
+                            # 显示所有关键词
+                            # 计算需要多少行（每行5个）
+                            rows_needed = (len(keywords) + 4) // 5
+                            
+                            for row in range(rows_needed):
+                                cols = st.columns(5)
+                                for col_idx in range(5):
+                                    keyword_index = row * 5 + col_idx
+                                    if keyword_index < len(keywords):
+                                        with cols[col_idx]:
+                                            st.code(keywords[keyword_index], language=None)
+                                            # 添加序号
+                                            st.caption(f"#{keyword_index+1}")
+                                
+                                # 在每行之间添加分割线（除了最后一行）
+                                if row < rows_needed - 1:
+                                    st.divider()
+                        
+                        # 显示关键词统计
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("总关键词数", len(keywords))
+                        with col2:
+                            # 计算平均关键词长度
+                            avg_length = sum(len(kw) for kw in keywords) / len(keywords) if keywords else 0
+                            st.metric("平均长度", f"{avg_length:.1f}")
+                        with col3:
+                            # 统计包含空格的复合关键词
+                            compound_keywords = [kw for kw in keywords if ' ' in kw]
+                            st.metric("复合关键词", len(compound_keywords))
+                
+                # 添加一个复制所有关键词的按钮
+                if keywords:
+                    st.divider()
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        # 复制所有关键词到剪贴板
+                        all_keywords_text = "\n".join(keywords)
+                        st.download_button(
+                            label="📋 导出所有关键词",
+                            data=all_keywords_text,
+                            file_name=f"{set_name}_keywords.txt",
+                            mime="text/plain",
+                            use_container_width=True
+                        )
+                    with col2:
+                        # 显示关键词概况
+                        with st.expander("📊 关键词概况", expanded=False):
+                            # 统计不同长度的关键词
+                            keyword_lengths = {}
+                            for kw in keywords:
+                                length = len(kw)
+                                keyword_lengths[length] = keyword_lengths.get(length, 0) + 1
+                            
+                            st.write("**长度分布:**")
+                            for length in sorted(keyword_lengths.keys()):
+                                count = keyword_lengths[length]
+                                st.write(f"{length} 字符: {count} 个 ({count/len(keywords)*100:.1f}%)")
+                            
+                            # 找出最长的关键词
+                            if keywords:
+                                longest_kw = max(keywords, key=len)
+                                shortest_kw = min(keywords, key=len)
+                                st.write(f"**最长关键词:** {longest_kw} ({len(longest_kw)} 字符)")
+                                st.write(f"**最短关键词:** {shortest_kw} ({len(shortest_kw)} 字符)")
     
     # 创建新集合按钮
     st.divider()
-    if st.button("➕ 创建新集合", use_container_width=True):
-        start_new_set()
+    if st.button("➕ 创建新集合", use_container_width=True, key="create_new_set"):
+        clear_editing_set()
+        st.session_state.new_set_mode = True
+        # 切换到编辑标签页
+        st.switch_to_tab("集合编辑")
 
 # ==================== 标签页2：集合编辑 ====================
-elif st.session_state.current_tab == "集合编辑":
+with tab2:
     st.header("编辑集合")
     
     # 显示当前模式
-    if st.session_state.new_set_mode:
+    if st.session_state.get('new_set_mode', False):
         st.info("📝 创建新集合")
+        editing_set_name = ""
     elif st.session_state.editing_set_name:
         st.info(f"📝 正在编辑集合: **{st.session_state.editing_set_name}**")
+        editing_set_name = st.session_state.editing_set_name
     else:
         st.warning("请从集合列表中选择一个集合进行编辑，或创建新集合。")
-        if st.button("返回集合列表"):
-            st.session_state.current_tab = "集合列表"
-            st.rerun()
+        st.info("您可以：")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔍 查看集合列表", use_container_width=True):
+                st.switch_to_tab("集合列表")
+        with col2:
+            if st.button("🆕 创建新集合", use_container_width=True):
+                clear_editing_set()
+                st.session_state.new_set_mode = True
+                st.rerun()
         st.stop()
     
     # 集合名称
-    current_name = st.session_state.editing_set_name if not st.session_state.new_set_mode else ""
     new_set_name = st.text_input(
         "集合名称 *", 
-        value=current_name if not st.session_state.new_set_mode else "",
+        value=editing_set_name if 'editing_set_name' in st.session_state else "",
         placeholder="请输入集合名称（如：Australia、ECSA等）",
-        disabled=not st.session_state.new_set_mode and st.session_state.editing_set_name is not None
+        disabled=not st.session_state.get('new_set_mode', False) and st.session_state.get('editing_set_name')
     )
     
     # 关键词编辑（文本区域，每行一个关键词）
@@ -256,7 +338,7 @@ elif st.session_state.current_tab == "集合编辑":
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("💾 保存集合", use_container_width=True, type="primary"):
+        if st.button("💾 保存集合", use_container_width=True, type="primary", key="save_set"):
             if not new_set_name.strip():
                 st.error("集合名称不能为空")
             else:
@@ -266,7 +348,7 @@ elif st.session_state.current_tab == "集合编辑":
                 if not keywords:
                     st.error("关键词列表不能为空")
                 else:
-                    if not st.session_state.new_set_mode and st.session_state.editing_set_name:
+                    if not st.session_state.get('new_set_mode', False) and st.session_state.get('editing_set_name'):
                         # 更新现有集合
                         success, message = update_set(st.session_state.editing_set_name, keywords, description)
                     else:
@@ -276,26 +358,26 @@ elif st.session_state.current_tab == "集合编辑":
                     if success:
                         st.success(message)
                         clear_editing_set()
-                        st.session_state.current_tab = "集合列表"
-                        st.rerun()
+                        # 切换回集合列表
+                        st.switch_to_tab("集合列表")
                     else:
                         st.error(message)
     
     with col2:
-        if st.button("🗑️ 取消编辑", use_container_width=True, type="secondary"):
+        if st.button("🗑️ 取消编辑", use_container_width=True, type="secondary", key="cancel_edit"):
             clear_editing_set()
-            st.session_state.current_tab = "集合列表"
-            st.rerun()
+            # 切换回集合列表
+            st.switch_to_tab("集合列表")
     
     with col3:
-        if st.button("📤 导出为模板", use_container_width=True):
+        if st.button("📤 导出为模板", use_container_width=True, key="save_as_template"):
             if not new_set_name.strip():
                 st.error("请先填写集合名称")
             elif not keywords_text.strip():
                 st.error("关键词列表不能为空")
             else:
                 # 确保集合已存在
-                if not st.session_state.new_set_mode and st.session_state.editing_set_name:
+                if not st.session_state.get('new_set_mode', False) and st.session_state.get('editing_set_name'):
                     # 更新现有集合并标记为模板
                     keywords = [kw.strip().upper() for kw in keywords_text.split('\n') if kw.strip()]
                     update_set(st.session_state.editing_set_name, keywords, description)
@@ -309,8 +391,7 @@ elif st.session_state.current_tab == "集合编辑":
                 if success:
                     st.success(message)
                     clear_editing_set()
-                    st.session_state.current_tab = "集合列表"
-                    st.rerun()
+                    st.switch_to_tab("集合列表")
                 else:
                     st.error(message)
     
@@ -332,7 +413,7 @@ elif st.session_state.current_tab == "集合编辑":
             st.warning(f"发现重复关键词: {', '.join(duplicates)}")
 
 # ==================== 标签页3：模板库 ====================
-elif st.session_state.current_tab == "模板库":
+with tab3:
     st.header("模板库")
     st.write("使用预定义模板快速创建集合")
     
@@ -381,9 +462,10 @@ elif st.session_state.current_tab == "模板库":
                 with col2:
                     if st.button("📝 编辑此模板", key=f"edit_template_{template_name}", use_container_width=True):
                         load_editing_set(template_name)
+                        st.switch_to_tab("集合编辑")
 
 # ==================== 标签页4：导入/导出 ====================
-elif st.session_state.current_tab == "导入/导出":
+with tab4:
     st.header("导入/导出配置")
     
     col1, col2 = st.columns(2)
