@@ -72,7 +72,6 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # ==================== 标签页1：集合列表 ====================
-# ==================== 标签页1：集合列表 ====================
 with tab1:
     st.header("所有自定义集合")
     
@@ -149,8 +148,9 @@ with tab1:
                     # 编辑按钮
                     if st.button("编辑", key=f"edit_{set_name}", use_container_width=True):
                         load_editing_set(set_name)
-                        # 切换到编辑标签页
-                        st.switch_to_tab("集合编辑")
+                        # 切换到编辑标签页 - 使用标签页的索引
+                        st.session_state.active_tab = 1
+                        st.rerun()
                     
                     # 删除按钮（模板不能删除）
                     if not is_template:
@@ -165,7 +165,7 @@ with tab1:
                         st.button("删除", key=f"delete_disabled_{set_name}", 
                                  use_container_width=True, disabled=True)
                 
-                # ========== 修改这里：显示所有关键词 ==========
+                # 显示关键词
                 if keywords:
                     # 创建两个标签页：预览和全部
                     keyword_tab1, keyword_tab2 = st.tabs(["📋 关键词预览", "📚 全部关键词"])
@@ -282,7 +282,8 @@ with tab1:
         clear_editing_set()
         st.session_state.new_set_mode = True
         # 切换到编辑标签页
-        st.switch_to_tab("集合编辑")
+        st.session_state.active_tab = 1
+        st.rerun()
 
 # ==================== 标签页2：集合编辑 ====================
 with tab2:
@@ -301,7 +302,8 @@ with tab2:
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔍 查看集合列表", use_container_width=True):
-                st.switch_to_tab("集合列表")
+                st.session_state.active_tab = 0
+                st.rerun()
         with col2:
             if st.button("🆕 创建新集合", use_container_width=True):
                 clear_editing_set()
@@ -359,7 +361,8 @@ with tab2:
                         st.success(message)
                         clear_editing_set()
                         # 切换回集合列表
-                        st.switch_to_tab("集合列表")
+                        st.session_state.active_tab = 0
+                        st.rerun()
                     else:
                         st.error(message)
     
@@ -367,7 +370,8 @@ with tab2:
         if st.button("🗑️ 取消编辑", use_container_width=True, type="secondary", key="cancel_edit"):
             clear_editing_set()
             # 切换回集合列表
-            st.switch_to_tab("集合列表")
+            st.session_state.active_tab = 0
+            st.rerun()
     
     with col3:
         if st.button("📤 导出为模板", use_container_width=True, key="save_as_template"):
@@ -391,7 +395,8 @@ with tab2:
                 if success:
                     st.success(message)
                     clear_editing_set()
-                    st.switch_to_tab("集合列表")
+                    st.session_state.active_tab = 0
+                    st.rerun()
                 else:
                     st.error(message)
     
@@ -462,7 +467,8 @@ with tab3:
                 with col2:
                     if st.button("📝 编辑此模板", key=f"edit_template_{template_name}", use_container_width=True):
                         load_editing_set(template_name)
-                        st.switch_to_tab("集合编辑")
+                        st.session_state.active_tab = 1
+                        st.rerun()
 
 # ==================== 标签页4：导入/导出 ====================
 with tab4:
