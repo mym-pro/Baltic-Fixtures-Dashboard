@@ -11,3 +11,4 @@ date,fixtureType,voyageType,shipName,buildYear,dwt,deliveryPort,freeText,loadAre
 2026-01-09,PERIOD,,Bentley,2019,80856,Mizushima,1 year,pacific,Cosco,,fixed 1 year redel worldwide 105% of BPI,'Bentley' 2019 80856 dwt dely Mizushima 20/30 Jan fixed 1 year redel worldwide 105% of BPI - Cosco,,,KMX
 2026-01-12,PERIOD,,Grampus Charm,2013,82937,Belawan,4/6 months,,Costamare,,"4/6 months redel worldwide $14,500","'Grampus Charm' 2013 82937 dwt dely Belawan 19/20 Jan 4/6 months redel worldwide $14,500 - Costamare",worldwide,"$14,500",KMX
 2026-01-12,PERIOD,,DSI Altair,2016,60309,Nantong,17 Jan,pacific,Bunge,,11/14 months,"'DSI Altair' 2016 60309 dwt dely Nantong 17 Jan 11/14 months redel worldwide $14,750 - Bunge",worldwide,"$14,750",SMX/UMX/HANDY
+2026-01-13,PERIOD,,W-Star,2011,92842,CJK,9/13 months,,Swissmarine,,"9/13 months redel worldwide $13,250","'W-Star' 2011 92842 dwt dely CJK 12 Jan 9/13 months redel worldwide $13,250 - Swissmarine",worldwide,"$13,250",KMX
