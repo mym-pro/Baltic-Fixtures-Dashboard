@@ -1,8 +1,81 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, datetime
+import json
 
+st.set_page_config(layout="wide")
 st.title('Baltic Exchange Fixtures Dashboard')
+
+# ==================== 导入配置管理模块 ====================
+try:
+    from config_manager import get_custom_sets, get_all_sets_names, get_set_keywords, get_set, increment_usage_count
+    CONFIG_MANAGER_AVAILABLE = True
+except ImportError:
+    CONFIG_MANAGER_AVAILABLE = False
+    st.error("❌ 配置管理模块未找到，请确保 config_manager.py 文件存在")
+    st.stop()
+
+# ==================== 数据辅助函数 ====================
+def contains_keywords(row, fixture_type, keyword_sets, logic="OR"):
+    """
+    通用关键词筛选函数
+    
+    参数:
+    - row: DataFrame行数据
+    - fixture_type: 数据类型（TIMECHARTER/PERIOD/VOYAGE）
+    - keyword_sets: 字典，{集合名: [关键词列表]}
+    - logic: "OR"（任一集合匹配）或"AND"（所有集合匹配）
+    
+    返回: bool
+    """
+    
+    if not keyword_sets:
+        return True
+    
+    # 确定要检查的字段
+    if fixture_type in ["TIMECHARTER", "PERIOD"]:
+        fields_to_check = ['deliveryPort', 'loadArea', 'via', 'redel']
+    else:
+        fields_to_check = ['loadArea', 'loadPort', 'dischargePort']
+    
+    # 过滤掉不存在的字段
+    fields_to_check = [field for field in fields_to_check if field in row]
+    
+    # 根据逻辑进行筛选
+    if logic == "OR":
+        # OR逻辑：匹配任意集合的任意关键词
+        for set_name, keywords in keyword_sets.items():
+            if matches_keywords(row, fields_to_check, keywords):
+                return True
+        return False
+    else:
+        # AND逻辑：必须匹配所有集合
+        for set_name, keywords in keyword_sets.items():
+            if not matches_keywords(row, fields_to_check, keywords):
+                return False
+        return True
+
+def matches_keywords(row, fields, keywords):
+    """检查行数据是否包含指定关键词"""
+    for field in fields:
+        if field in row and not pd.isna(row[field]):
+            port_str = str(row[field]).upper()
+            for keyword in keywords:
+                if keyword.upper() in port_str:
+                    return True
+    return False
+
+def is_port_related(port_name, keywords):
+    """检查港口是否包含指定关键词列表中的任意一个"""
+    if pd.isna(port_name):
+        return False
+    
+    port_str = str(port_name).upper()
+    for keyword in keywords:
+        if keyword.upper() in port_str:
+            return True
+    
+    return False
 
 # ==================== 更宽容的数据检查 ====================
 def check_any_data_loaded():
@@ -81,53 +154,6 @@ for idx, (name, data) in enumerate(data_status_info):
         cols[col_idx].success(f"✅ {name}: {len(data)} 条记录")
 
 # ==================== 辅助函数 ====================
-def is_australian_port(port_name):
-    """检查港口是否为Australia相关港口"""
-    if pd.isna(port_name):
-        return False
-    
-    australian_keywords = [
-        'AUSTRALIA', 'AUS', 'WESTERN AUSTRALIA', 'WA',
-        'QUEENSLAND', 'QLD', 'NEW SOUTH WALES', 'NSW',
-        'VICTORIA', 'VIC', 'SOUTH AUSTRALIA', 'SA',
-        'TASMANIA', 'TAS', 'NORTHERN TERRITORY', 'NT',
-        'SYDNEY', 'MELBOURNE', 'BRISBANE', 'PERTH',
-        'ADELAIDE', 'DARWIN', 'HOBART', 'NEWCASTLE',
-        'FREMANTLE', 'GEELONG', 'PORT KEMBLA',
-        'TOWNSVILLE', 'CAIRNS', 'GLADSTONE', 'MACKAY',
-        'BUNBURY', 'ESPERANCE', 'ALBANY', 'PORT LINCOLN',
-        'PORT HEDLAND', 'DAMPIER', 'HAY POINT', 'ABBOT POINT',
-        'PORT WALCOTT', 'CAPE LAMBERT', 'PORT ALMA',
-        'PORT BOTANY', 'PORT OF BRISBANE', 'PORT OF MELBOURNE',
-        'PORT OF ADELAIDE', 'PORT OF FREMANTLE',
-        'WEIPA', 'GOVE', 'KARRATHA', 'GERALDTON',
-        'BROOME', 'PORTLAND', 'BURNIE', 'DEVONPORT',
-        'PORT PIRIE', 'WHYALLA', 'PORT GILES'
-    ]
-    
-    port_str = str(port_name).upper()
-    
-    for keyword in australian_keywords:
-        if keyword in port_str:
-            return True
-    
-    return False
-
-def contains_australian_info(row, fixture_type):
-    """检查一行数据是否包含Australia相关信息"""
-    if fixture_type in ["TIMECHARTER", "PERIOD"]:
-        fields_to_check = ['deliveryPort', 'loadArea', 'via', 'redel']
-        for field in fields_to_check:
-            if field in row and is_australian_port(row[field]):
-                return True
-    else:
-        fields_to_check = ['loadArea', 'loadPort', 'dischargePort']
-        for field in fields_to_check:
-            if field in row and is_australian_port(row[field]):
-                return True
-    
-    return False
-
 def get_latest_data(data, fixture_type_name):
     """获取最新一天的数据"""
     if data is None or data.empty:
@@ -179,26 +205,75 @@ else:
         available_types
     )
 
-# 2. Australia港口筛选选项
-st.sidebar.markdown("---")
-st.sidebar.subheader("🇦🇺 Australia港口筛选")
-show_australia_only = st.sidebar.checkbox("仅显示Australia相关港口", value=False)
+# ==================== 基础筛选部分 ====================
+with st.sidebar.expander("🔍 基础筛选", expanded=True):
+    # 这里的内容将在选择数据类型后动态显示
+    pass
 
-# 添加Australia港口筛选说明
-with st.sidebar.expander("Australia港口筛选说明"):
-    st.write("""
-    **筛选逻辑：**
-    - TIMECHARTER/PERIOD: 检查 deliveryPort, loadArea, via, redel 字段
-    - VOYAGE类型: 检查 loadArea, loadPort, dischargePort 字段
-    
-    **当前识别的Australia关键词：**
-    - 国家/地区: AUSTRALIA, AUS, WA, QLD, NSW, VIC等
-    - 主要港口: SYDNEY, MELBOURNE, BRISBANE, PERTH等
-    - 矿石港口: PORT HEDLAND, DAMPIER, HAY POINT等
-    
-    **维护说明：**
-    如需添加新的Australia港口关键词，请在代码中的 `australian_keywords` 列表中添加。
-    """)
+# ==================== 自定义集合筛选部分 ====================
+with st.sidebar.expander("🗂️ 自定义筛选集合", expanded=True):
+    if not CONFIG_MANAGER_AVAILABLE:
+        st.error("配置管理模块不可用")
+    else:
+        # 获取所有自定义集合
+        custom_sets = get_custom_sets()
+        
+        if not custom_sets:
+            st.info("📭 没有自定义筛选集合")
+            st.markdown("请前往 **Data Manager** 页面创建您的第一个集合")
+        else:
+            # 按使用频率排序（使用次数多的靠前）
+            sorted_sets = sorted(
+                custom_sets.items(),
+                key=lambda x: x[1].get("usage_count", 0),
+                reverse=True
+            )
+            
+            # 显示集合选择
+            st.markdown("**选择筛选集合:**")
+            
+            selected_sets = {}
+            for set_name, set_data in sorted_sets:
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    if st.checkbox(set_name, key=f"set_{set_name}"):
+                        selected_sets[set_name] = set_data.get("keywords", [])
+                with col2:
+                    # 显示关键词数量
+                    keyword_count = len(set_data.get("keywords", []))
+                    st.markdown(f"<small>{keyword_count}个</small>", unsafe_allow_html=True)
+            
+            # 选择逻辑
+            if len(selected_sets) > 1:
+                logic_option = st.radio(
+                    "集合间逻辑",
+                    ["OR (匹配任意集合)", "AND (匹配所有集合)"],
+                    index=0,
+                    help="OR: 匹配任意一个选中的集合；AND: 必须匹配所有选中的集合"
+                )
+                logic = "OR" if logic_option == "OR (匹配任意集合)" else "AND"
+            else:
+                logic = "OR"
+            
+            # 显示选中的集合信息
+            if selected_sets:
+                st.markdown("---")
+                st.markdown("**已选集合:**")
+                for set_name in selected_sets.keys():
+                    set_data = custom_sets.get(set_name, {})
+                    keywords = set_data.get("keywords", [])
+                    description = set_data.get("description", "")
+                    
+                    with st.expander(f"📁 {set_name}", expanded=False):
+                        if description:
+                            st.caption(f"描述: {description}")
+                        st.write("关键词:")
+                        # 显示前10个关键词
+                        keywords_to_show = keywords[:10]
+                        for kw in keywords_to_show:
+                            st.code(kw, language=None)
+                        if len(keywords) > 10:
+                            st.caption(f"... 还有 {len(keywords)-10} 个关键词")
 
 # ==================== 主显示逻辑 ====================
 if fixture_type == "TIMECHARTER":
@@ -229,108 +304,205 @@ else:
     latest_date = data.index.max()
     st.success(f"最新数据日期: {latest_date.strftime('%Y-%m-%d')}")
     
-    # 获取最新一天的数据
+    # 获取最新一天的数据（只显示当天的数据）
     latest_data = get_latest_data(data, fixture_type)
     
     # 统计信息
     total_records = len(latest_data)
     st.info(f"今日共 {total_records} 条记录")
     
-    # ========== 筛选器 ==========
-    st.subheader("🔍 筛选选项")
-    
-    # 根据数据类型显示不同的筛选器
-    if fixture_type in ["TIMECHARTER", "PERIOD"]:
-        # TIMECHARTER 和 PERIOD 的筛选器
-        col1, col2, col3 = st.columns(3)
+    # ========== 动态生成基础筛选器 ==========
+    with st.sidebar.expander("🔍 基础筛选", expanded=True):
+        st.subheader("基础筛选选项")
         
-        with col1:
-            if 'deliveryPort' in latest_data.columns and not latest_data['deliveryPort'].dropna().empty:
-                all_delivery_ports = sorted(latest_data['deliveryPort'].dropna().unique())
-                selected_delivery_ports = st.multiselect(
-                    "Delivery Ports",
-                    options=all_delivery_ports,
-                    default=[],  # 修改：默认什么都不选
-                    help="选择要显示的交付港口，不选则显示全部"
-                )
-            else:
-                selected_delivery_ports = []
-                st.info("Delivery Ports: 无数据")
-        
-        with col2:
-            if 'loadArea' in latest_data.columns and not latest_data['loadArea'].dropna().empty:
-                all_load_areas = sorted(latest_data['loadArea'].dropna().unique())
-                selected_load_areas = st.multiselect(
-                    "Load Areas",
-                    options=all_load_areas,
-                    default=[],  # 修改：默认什么都不选
-                    help="选择要显示的装载区域，不选则显示全部"
-                )
-            else:
-                selected_load_areas = []
-                st.info("Load Areas: 无数据")
-        
-        with col3:
-            if 'VESSEL TYPE' in latest_data.columns and not latest_data['VESSEL TYPE'].dropna().empty:
-                all_vessel_types = sorted(latest_data['VESSEL TYPE'].dropna().unique())
-                selected_vessel_types = st.multiselect(
-                    "Vessel Types",
-                    options=all_vessel_types,
-                    default=[],  # 修改：默认什么都不选
-                    help="选择要显示的船舶类型，不选则显示全部"
-                )
-            else:
-                selected_vessel_types = []
-                st.info("Vessel Types: 无数据")
-        
-        # 第二行筛选器
-        col4, col5, col6 = st.columns(3)
-        
-        # 根据是否是 TIMECHARTER 显示不同的筛选器
-        if fixture_type == "TIMECHARTER":
-            with col4:
-                if 'via' in latest_data.columns and not latest_data['via'].dropna().empty:
-                    all_via = sorted(latest_data['via'].dropna().unique())
-                    selected_via = st.multiselect(
-                        "Via Ports",
-                        options=all_via,
-                        default=[],  # 修改：默认什么都不选
-                        help="选择要显示的中转港口，不选则显示全部"
+        if fixture_type in ["TIMECHARTER", "PERIOD"]:
+            # TIMECHARTER 和 PERIOD 的筛选器
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if 'deliveryPort' in latest_data.columns and not latest_data['deliveryPort'].dropna().empty:
+                    all_delivery_ports = sorted(latest_data['deliveryPort'].dropna().unique())
+                    selected_delivery_ports = st.multiselect(
+                        "Delivery Ports",
+                        options=all_delivery_ports,
+                        default=[],
+                        help="选择要显示的交付港口，不选则显示全部"
                     )
                 else:
-                    selected_via = []
-                    st.info("Via Ports: 无数据")
-        
-        with col5:
-            if 'redel' in latest_data.columns and not latest_data['redel'].dropna().empty:
-                all_redel = sorted(latest_data['redel'].dropna().unique())
-                selected_redel = st.multiselect(
-                    "Redelivery Ports",
-                    options=all_redel,
-                    default=[],  # 修改：默认什么都不选
-                    help="选择要显示的还船港口，不选则显示全部"
-                )
+                    selected_delivery_ports = []
+                    st.info("Delivery Ports: 无数据")
+            
+            with col2:
+                if 'loadArea' in latest_data.columns and not latest_data['loadArea'].dropna().empty:
+                    all_load_areas = sorted(latest_data['loadArea'].dropna().unique())
+                    selected_load_areas = st.multiselect(
+                        "Load Areas",
+                        options=all_load_areas,
+                        default=[],
+                        help="选择要显示的装载区域，不选则显示全部"
+                    )
+                else:
+                    selected_load_areas = []
+                    st.info("Load Areas: 无数据")
+            
+            col3, col4 = st.columns(2)
+            
+            with col3:
+                if 'VESSEL TYPE' in latest_data.columns and not latest_data['VESSEL TYPE'].dropna().empty:
+                    all_vessel_types = sorted(latest_data['VESSEL TYPE'].dropna().unique())
+                    selected_vessel_types = st.multiselect(
+                        "Vessel Types",
+                        options=all_vessel_types,
+                        default=[],
+                        help="选择要显示的船舶类型，不选则显示全部"
+                    )
+                else:
+                    selected_vessel_types = []
+                    st.info("Vessel Types: 无数据")
+            
+            with col4:
+                if 'charterer' in latest_data.columns and not latest_data['charterer'].dropna().empty:
+                    all_charterers = sorted(latest_data['charterer'].dropna().unique())
+                    selected_charterers = st.multiselect(
+                        "Charterers",
+                        options=all_charterers,
+                        default=[],
+                        help="选择要显示的租船人，不选则显示全部"
+                    )
+                else:
+                    selected_charterers = []
+                    st.info("Charterers: 无数据")
+            
+            # 第二行筛选器
+            if fixture_type == "TIMECHARTER":
+                col5, col6 = st.columns(2)
+                
+                with col5:
+                    if 'via' in latest_data.columns and not latest_data['via'].dropna().empty:
+                        all_via = sorted(latest_data['via'].dropna().unique())
+                        selected_via = st.multiselect(
+                            "Via Ports",
+                            options=all_via,
+                            default=[],
+                            help="选择要显示的中转港口，不选则显示全部"
+                        )
+                    else:
+                        selected_via = []
+                        st.info("Via Ports: 无数据")
+                
+                with col6:
+                    if 'redel' in latest_data.columns and not latest_data['redel'].dropna().empty:
+                        all_redel = sorted(latest_data['redel'].dropna().unique())
+                        selected_redel = st.multiselect(
+                            "Redelivery Ports",
+                            options=all_redel,
+                            default=[],
+                            help="选择要显示的还船港口，不选则显示全部"
+                        )
+                    else:
+                        selected_redel = []
+                        st.info("Redelivery Ports: 无数据")
             else:
-                selected_redel = []
-                st.info("Redelivery Ports: 无数据")
+                # PERIOD类型只有redel
+                if 'redel' in latest_data.columns and not latest_data['redel'].dropna().empty:
+                    all_redel = sorted(latest_data['redel'].dropna().unique())
+                    selected_redel = st.multiselect(
+                        "Redelivery Ports",
+                        options=all_redel,
+                        default=[],
+                        help="选择要显示的还船港口，不选则显示全部"
+                    )
+                else:
+                    selected_redel = []
         
-        with col6:
-            if 'charterer' in latest_data.columns and not latest_data['charterer'].dropna().empty:
-                all_charterers = sorted(latest_data['charterer'].dropna().unique())
-                selected_charterers = st.multiselect(
-                    "Charterers",
-                    options=all_charterers,
-                    default=[],  # 修改：默认什么都不选
-                    help="选择要显示的租船人，不选则显示全部"
-                )
-            else:
-                selected_charterers = []
-                st.info("Charterers: 无数据")
-        
-        # ========== 应用基础筛选 ==========
-        filtered_data = latest_data.copy()
-        
-        # 只有选择了选项才应用筛选
+        else:
+            # VOYAGE类型的筛选器
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if 'loadArea' in latest_data.columns and not latest_data['loadArea'].dropna().empty:
+                    all_load_areas = sorted(latest_data['loadArea'].dropna().unique())
+                    selected_load_areas = st.multiselect(
+                        "Load Areas",
+                        options=all_load_areas,
+                        default=[],
+                        help="选择要显示的装载区域，不选则显示全部"
+                    )
+                else:
+                    selected_load_areas = []
+                    st.info("Load Areas: 无数据")
+                
+                if 'loadPort' in latest_data.columns and not latest_data['loadPort'].dropna().empty:
+                    all_load_ports = sorted(latest_data['loadPort'].dropna().unique())
+                    selected_load_ports = st.multiselect(
+                        "Load Ports",
+                        options=all_load_ports,
+                        default=[],
+                        help="选择要显示的装载港口，不选则显示全部"
+                    )
+                else:
+                    selected_load_ports = []
+                    st.info("Load Ports: 无数据")
+            
+            with col2:
+                if 'dischargePort' in latest_data.columns and not latest_data['dischargePort'].dropna().empty:
+                    all_discharge_ports = sorted(latest_data['dischargePort'].dropna().unique())
+                    selected_discharge_ports = st.multiselect(
+                        "Discharge Ports",
+                        options=all_discharge_ports,
+                        default=[],
+                        help="选择要显示的卸货港口，不选则显示全部"
+                    )
+                else:
+                    selected_discharge_ports = []
+                    st.info("Discharge Ports: 无数据")
+                
+                if 'VESSEL TYPE' in latest_data.columns and not latest_data['VESSEL TYPE'].dropna().empty:
+                    all_vessel_types = sorted(latest_data['VESSEL TYPE'].dropna().unique())
+                    selected_vessel_types = st.multiselect(
+                        "Vessel Types",
+                        options=all_vessel_types,
+                        default=[],
+                        help="选择要显示的船舶类型，不选则显示全部"
+                    )
+                else:
+                    selected_vessel_types = []
+                    st.info("Vessel Types: 无数据")
+            
+            # 第三行筛选器
+            col3, col4 = st.columns(2)
+            
+            with col3:
+                if 'charterer' in latest_data.columns and not latest_data['charterer'].dropna().empty:
+                    all_charterers = sorted(latest_data['charterer'].dropna().unique())
+                    selected_charterers = st.multiselect(
+                        "Charterers",
+                        options=all_charterers,
+                        default=[],
+                        help="选择要显示的租船人，不选则显示全部"
+                    )
+                else:
+                    selected_charterers = []
+                    st.info("Charterers: 无数据")
+            
+            with col4:
+                if 'cargoSize' in latest_data.columns and not latest_data['cargoSize'].dropna().empty:
+                    all_cargo_sizes = sorted(latest_data['cargoSize'].dropna().unique())
+                    selected_cargo_sizes = st.multiselect(
+                        "Cargo Sizes",
+                        options=all_cargo_sizes,
+                        default=[],
+                        help="选择要显示的货物尺寸，不选则显示全部"
+                    )
+                else:
+                    selected_cargo_sizes = []
+                    st.info("Cargo Sizes: 无数据")
+    
+    # ========== 应用基础筛选 ==========
+    filtered_data = latest_data.copy()
+    
+    # 应用基础筛选
+    if fixture_type in ["TIMECHARTER", "PERIOD"]:
         if selected_delivery_ports:
             filtered_data = filtered_data[filtered_data['deliveryPort'].isin(selected_delivery_ports) | filtered_data['deliveryPort'].isna()]
         
@@ -340,102 +512,16 @@ else:
         if selected_vessel_types:
             filtered_data = filtered_data[filtered_data['VESSEL TYPE'].isin(selected_vessel_types) | filtered_data['VESSEL TYPE'].isna()]
         
-        if fixture_type == "TIMECHARTER" and selected_via:
-            filtered_data = filtered_data[filtered_data['via'].isin(selected_via) | filtered_data['via'].isna()]
-        
-        if selected_redel:
-            filtered_data = filtered_data[filtered_data['redel'].isin(selected_redel) | filtered_data['redel'].isna()]
-        
         if selected_charterers:
             filtered_data = filtered_data[filtered_data['charterer'].isin(selected_charterers) | filtered_data['charterer'].isna()]
+        
+        if 'selected_via' in locals() and selected_via:
+            filtered_data = filtered_data[filtered_data['via'].isin(selected_via) | filtered_data['via'].isna()]
+        
+        if 'selected_redel' in locals() and selected_redel:
+            filtered_data = filtered_data[filtered_data['redel'].isin(selected_redel) | filtered_data['redel'].isna()]
     
-    else:
-        # VOYAGE类型的筛选器
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if 'loadArea' in latest_data.columns and not latest_data['loadArea'].dropna().empty:
-                all_load_areas = sorted(latest_data['loadArea'].dropna().unique())
-                selected_load_areas = st.multiselect(
-                    "Load Areas",
-                    options=all_load_areas,
-                    default=[],  # 修改：默认什么都不选
-                    help="选择要显示的装载区域，不选则显示全部"
-                )
-            else:
-                selected_load_areas = []
-                st.info("Load Areas: 无数据")
-            
-            if 'loadPort' in latest_data.columns and not latest_data['loadPort'].dropna().empty:
-                all_load_ports = sorted(latest_data['loadPort'].dropna().unique())
-                selected_load_ports = st.multiselect(
-                    "Load Ports",
-                    options=all_load_ports,
-                    default=[],  # 修改：默认什么都不选
-                    help="选择要显示的装载港口，不选则显示全部"
-                )
-            else:
-                selected_load_ports = []
-                st.info("Load Ports: 无数据")
-        
-        with col2:
-            if 'dischargePort' in latest_data.columns and not latest_data['dischargePort'].dropna().empty:
-                all_discharge_ports = sorted(latest_data['dischargePort'].dropna().unique())
-                selected_discharge_ports = st.multiselect(
-                    "Discharge Ports",
-                    options=all_discharge_ports,
-                    default=[],  # 修改：默认什么都不选
-                    help="选择要显示的卸货港口，不选则显示全部"
-                )
-            else:
-                selected_discharge_ports = []
-                st.info("Discharge Ports: 无数据")
-            
-            if 'VESSEL TYPE' in latest_data.columns and not latest_data['VESSEL TYPE'].dropna().empty:
-                all_vessel_types = sorted(latest_data['VESSEL TYPE'].dropna().unique())
-                selected_vessel_types = st.multiselect(
-                    "Vessel Types",
-                    options=all_vessel_types,
-                    default=[],  # 修改：默认什么都不选
-                    help="选择要显示的船舶类型，不选则显示全部"
-                )
-            else:
-                selected_vessel_types = []
-                st.info("Vessel Types: 无数据")
-        
-        # 第三行筛选器
-        col3, col4 = st.columns(2)
-        
-        with col3:
-            if 'charterer' in latest_data.columns and not latest_data['charterer'].dropna().empty:
-                all_charterers = sorted(latest_data['charterer'].dropna().unique())
-                selected_charterers = st.multiselect(
-                    "Charterers",
-                    options=all_charterers,
-                    default=[],  # 修改：默认什么都不选
-                    help="选择要显示的租船人，不选则显示全部"
-                )
-            else:
-                selected_charterers = []
-                st.info("Charterers: 无数据")
-        
-        with col4:
-            if 'cargoSize' in latest_data.columns and not latest_data['cargoSize'].dropna().empty:
-                all_cargo_sizes = sorted(latest_data['cargoSize'].dropna().unique())
-                selected_cargo_sizes = st.multiselect(
-                    "Cargo Sizes",
-                    options=all_cargo_sizes,
-                    default=[],  # 修改：默认什么都不选
-                    help="选择要显示的货物尺寸，不选则显示全部"
-                )
-            else:
-                selected_cargo_sizes = []
-                st.info("Cargo Sizes: 无数据")
-        
-        # ========== 应用基础筛选 ==========
-        filtered_data = latest_data.copy()
-        
-        # 只有选择了选项才应用筛选
+    else:  # VOYAGE类型
         if selected_load_areas:
             filtered_data = filtered_data[filtered_data['loadArea'].isin(selected_load_areas) | filtered_data['loadArea'].isna()]
         
@@ -454,15 +540,28 @@ else:
         if selected_cargo_sizes:
             filtered_data = filtered_data[filtered_data['cargoSize'].isin(selected_cargo_sizes) | filtered_data['cargoSize'].isna()]
     
-    # ========== 应用Australia筛选 ==========
-    if show_australia_only:
-        # 应用Australia港口筛选
-        australia_mask = filtered_data.apply(lambda row: contains_australian_info(row, fixture_type), axis=1)
-        filtered_data = filtered_data[australia_mask]
+    # ========== 应用自定义集合筛选 ==========
+    if selected_sets:
+        # 增加集合使用计数
+        for set_name in selected_sets.keys():
+            if CONFIG_MANAGER_AVAILABLE:
+                increment_usage_count(set_name)
+        
+        # 应用自定义集合筛选
+        custom_filter_mask = filtered_data.apply(
+            lambda row: contains_keywords(row, fixture_type, selected_sets, logic),
+            axis=1
+        )
+        
+        custom_filtered_data = filtered_data[custom_filter_mask].copy()
         
         # 显示筛选统计
-        australia_count = len(filtered_data)
-        st.warning(f"**Australia相关港口筛选已启用** - 显示 {australia_count} 条Australia相关记录")
+        original_count = len(filtered_data)
+        custom_count = len(custom_filtered_data)
+        st.success(f"**自定义集合筛选已启用** - 从 {original_count} 条记录中筛选出 {custom_count} 条匹配记录")
+        
+        # 使用自定义筛选后的数据
+        filtered_data = custom_filtered_data
     
     # ========== 显示数据 ==========
     st.subheader(f"📊 筛选结果 ({len(filtered_data)} 条记录)")
@@ -490,7 +589,7 @@ else:
         
         # 如果没有默认列，使用所有可用列
         if not default_columns:
-            default_columns = available_columns[:8]  # 显示前8列
+            default_columns = available_columns[:8]
         
         visible_columns = st.multiselect(
             "选择显示的列",
@@ -502,14 +601,26 @@ else:
         if visible_columns:
             display_data = filtered_data[visible_columns]
             
-            # 高亮Australia相关港口
-            if show_australia_only:
-                # 对Australia港口进行高亮
-                def highlight_australian(val):
+            # 高亮自定义集合匹配的港口
+            if selected_sets:
+                # 收集所有选中的关键词
+                all_selected_keywords = []
+                for keywords in selected_sets.values():
+                    all_selected_keywords.extend(keywords)
+                
+                # 去重
+                all_selected_keywords = list(set(all_selected_keywords))
+                
+                # 定义高亮函数
+                def highlight_matching_ports(val):
                     if pd.isna(val):
                         return ''
-                    if is_australian_port(val):
-                        return f'<span style="background-color: #FFE5B4; font-weight: bold;">{val}</span>'
+                    
+                    val_str = str(val).upper()
+                    for keyword in all_selected_keywords:
+                        if keyword.upper() in val_str:
+                            # 根据匹配的集合数量决定颜色深度
+                            return f'<span style="background-color: #FFE5B4; font-weight: bold;">{val}</span>'
                     return val
                 
                 # 应用高亮
@@ -521,7 +632,7 @@ else:
                 
                 for col in highlight_cols:
                     if col in styled_df.columns:
-                        styled_df[col] = styled_df[col].apply(highlight_australian)
+                        styled_df[col] = styled_df[col].apply(highlight_matching_ports)
                 
                 # 显示高亮后的表格
                 st.markdown(styled_df.to_html(escape=False), unsafe_allow_html=True)
@@ -534,7 +645,13 @@ else:
                 )
             
             # 统计信息
-            st.metric("筛选后记录数", len(filtered_data))
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("筛选后记录数", len(filtered_data))
+            with col2:
+                if len(filtered_data) > 0 and len(latest_data) > 0:
+                    percentage = (len(filtered_data) / len(latest_data)) * 100
+                    st.metric("占今日数据比例", f"{percentage:.1f}%")
             
             # 提供下载选项
             csv = filtered_data.to_csv(index=True)
@@ -567,10 +684,18 @@ if data is not None and not data.empty:
     if len(date_counts) > 0:
         st.sidebar.write(f"**最近7天平均每日记录:** {date_counts.tail(7).mean():.1f}")
     
-    # Australia相关统计
-    if show_australia_only and 'filtered_data' in locals():
-        australia_percentage = (len(filtered_data) / len(latest_data)) * 100 if len(latest_data) > 0 else 0
-        st.sidebar.write(f"**Australia记录占比:** {australia_percentage:.1f}%")
+    # 显示自定义集合使用情况
+    if selected_sets and 'filtered_data' in locals():
+        original_count = len(latest_data) if not latest_data.empty else 0
+        filtered_count = len(filtered_data)
+        if original_count > 0:
+            filter_percentage = (filtered_count / original_count) * 100
+            st.sidebar.write(f"**集合筛选后:** {filtered_count} 条 ({filter_percentage:.1f}%)")
+        
+        # 显示使用的集合
+        st.sidebar.write(f"**使用集合:** {len(selected_sets)} 个")
+        for set_name in selected_sets.keys():
+            st.sidebar.write(f"  • {set_name}")
 else:
     st.sidebar.warning(f"**{fixture_type}**: 无数据")
 
@@ -587,55 +712,62 @@ with st.expander("📋 查看所有数据状态详情"):
             latest_date = data.index.max() if not data.empty else "N/A"
             st.write(f"✅ **{name}**: {len(data)} 条记录，最新日期: {latest_date}")
 
-# ==================== Australia港口维护说明 ====================
-with st.expander("🛠️ Australia港口关键词维护说明"):
-    st.write("""
-    ### 如何添加新的Australia港口关键词
+# ==================== 自定义集合使用说明 ====================
+with st.expander("🗂️ 自定义集合使用说明"):
+    st.markdown("""
+    ### 什么是自定义筛选集合？
     
-    在代码的 `is_australian_port` 函数中，找到 `australian_keywords` 列表，
-    按照以下格式添加新的港口关键词：
+    自定义筛选集合是您创建的港口关键词分组，可以帮助您快速筛选感兴趣的数据。
     
-    ```python
-    australian_keywords = [
-        # 现有关键词...
-        
-        # 新添加的港口关键词
-        'YOUR_NEW_PORT', 'ANOTHER_PORT',
-    ]
-    ```
+    ### 如何使用？
     
-    ### 添加原则：
-    1. **全大写**：所有关键词都应使用大写字母
-    2. **完整名称**：添加港口的完整名称（如 'PORT HEDLAND'）
-    3. **缩写**：如有常见缩写，也一并添加（如 'WA' 代表 Western Australia）
-    4. **变体**：考虑不同的拼写变体
+    1. **选择集合**：在左侧边栏的"自定义筛选集合"部分，勾选您想要使用的集合
+    2. **选择逻辑**：
+       - **OR逻辑**：匹配任意一个选中的集合
+       - **AND逻辑**：必须匹配所有选中的集合
+    3. **查看结果**：表格中匹配的港口会被高亮显示
     
-    ### 当前已包含的关键词类别：
-    1. 国家/地区名称 (AUSTRALIA, AUS, WA, QLD等)
-    2. 主要城市港口 (SYDNEY, MELBOURNE等)
-    3. 重要港口城市 (NEWCASTLE, FREMANTLE等)
-    4. 矿石/煤炭港口 (PORT HEDLAND, DAMPIER等)
-    5. 其他常见港口
+    ### 示例场景：
     
-    ### 测试新关键词：
-    添加新关键词后，重启应用并测试是否能够正确识别新的Australia港口。
+    - **单集合筛选**：只勾选"Australia"集合，查看所有Australia相关的租约
+    - **多集合OR筛选**：勾选"Australia"和"ECSA"集合，查看这两个地区中任意一个相关的租约
+    - **多集合AND筛选**：勾选"USG"和"VCG"集合，查看同时涉及美国墨西哥湾和谷物贸易的租约
+    
+    ### 管理集合：
+    
+    要创建、编辑或删除集合，请访问 **Data Manager** 页面。
+    
+    ### 当前可用集合：
     """)
     
-    # 显示当前Australia港口关键词数量
-    australian_keywords = [
-        'AUSTRALIA', 'AUS', 'WESTERN AUSTRALIA', 'WA', 'QUEENSLAND', 'QLD',
-        'NEW SOUTH WALES', 'NSW', 'VICTORIA', 'VIC', 'SOUTH AUSTRALIA', 'SA',
-        'TASMANIA', 'TAS', 'NORTHERN TERRITORY', 'NT', 'SYDNEY', 'MELBOURNE',
-        'BRISBANE', 'PERTH', 'ADELAIDE', 'DARWIN', 'HOBART', 'NEWCASTLE',
-        'FREMANTLE', 'GEELONG', 'PORT KEMBLA', 'TOWNSVILLE', 'CAIRNS',
-        'GLADSTONE', 'MACKAY', 'BUNBURY', 'ESPERANCE', 'ALBANY', 'PORT LINCOLN',
-        'PORT HEDLAND', 'DAMPIER', 'HAY POINT', 'ABBOT POINT', 'PORT WALCOTT',
-        'CAPE LAMBERT', 'PORT ALMA', 'PORT BOTANY', 'PORT OF BRISBANE',
-        'PORT OF MELBOURNE', 'PORT OF ADELAIDE', 'PORT OF FREMANTLE',
-        'WEIPA', 'GOVE', 'KARRATHA', 'GERALDTON', 'BROOME', 'PORTLAND',
-        'BURNIE', 'DEVONPORT', 'PORT PIRIE', 'WHYALLA', 'PORT GILES'
-    ]
-    
-    st.write(f"**当前Australia关键词数量:** {len(australian_keywords)}")
-    st.write("**完整关键词列表:**")
-    st.code(", ".join(sorted(australian_keywords)))
+    if CONFIG_MANAGER_AVAILABLE:
+        custom_sets = get_custom_sets()
+        if custom_sets:
+            for set_name, set_data in custom_sets.items():
+                keywords = set_data.get("keywords", [])
+                description = set_data.get("description", "")
+                usage_count = set_data.get("usage_count", 0)
+                
+                st.markdown(f"**{set_name}**")
+                if description:
+                    st.caption(f"描述: {description}")
+                st.caption(f"关键词数量: {len(keywords)} | 使用次数: {usage_count}")
+                
+                # 显示前5个关键词
+                if keywords:
+                    keywords_preview = keywords[:5]
+                    preview_text = ", ".join(keywords_preview)
+                    if len(keywords) > 5:
+                        preview_text += f" ... 还有 {len(keywords)-5} 个"
+                    st.write(f"`{preview_text}`")
+                st.markdown("---")
+        else:
+            st.info("还没有创建任何自定义集合")
+    else:
+        st.error("配置管理模块不可用")
+
+# 添加导航到Data Manager的链接
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🛠️ 集合管理")
+if st.sidebar.button("⚙️ 前往 Data Manager"):
+    st.switch_page("pages/2_⚙️_Data_Manager.py")
