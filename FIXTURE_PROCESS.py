@@ -31,8 +31,6 @@ pd.set_option('display.max_columns',None)
 #让 DataFrame 不管多少行都 全部打印出来，不再出现中间省略号，这两行只是方便 开发调试阶段 在控制台里一眼看全表；上线后可以保留，也可以删掉，对最终用户界面没有任何影响。
 
 # ==================== 初始化配置 ====================
-# 在FIXTURE_PROCESS.py中找到initialize_config函数，确保它调用正确的初始化
-
 def initialize_config():
     """初始化配置管理系统"""
     if CONFIG_MANAGER_AVAILABLE:
@@ -903,4 +901,4 @@ st.write('All Data Loaded!!')
 
 st.button('Update Data',on_click=update_data) #按钮链接更新函数
 st.text('Data will be updated when streamlit is opened')
-st.text('If you would like to trigger the reload right now, please click on the above "Update Data" button.')
+st.text('If you would like to trigger the reload right now, please click on the above "Update Data" button.') 
